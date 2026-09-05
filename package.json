@@ -3,11 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "next dev -p 3000 -H 0.0.0.0",
+    "build": "NODE_ENV=production next build",
     "start": "next start",
     "lint": "eslint .",
-    "clean": "next clean"
+    "clean": "rm -rf .next"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
