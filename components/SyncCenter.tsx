@@ -36,6 +36,7 @@ import {
   AlertTriangle,
   X,
   Loader2,
+  ExternalLink,
 } from 'lucide-react';
 
 interface SyncCenterProps {
@@ -57,7 +58,7 @@ export const SyncCenter: React.FC<SyncCenterProps> = ({
   });
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [lastSyncResult, setLastSyncResult] = useState<SyncResult | null>(null);
-  const [verifyStatus, setVerifyStatus] = useState<{ success?: boolean; message?: string; loading?: boolean } | null>(null);
+  const [verifyStatus, setVerifyStatus] = useState<{ success?: boolean; message?: string; loading?: boolean; actionUrl?: string } | null>(null);
 
   // Settings form
   const [showroomForm, setShowroomForm] = useState<ShowroomSettings>(settings);
@@ -126,7 +127,7 @@ export const SyncCenter: React.FC<SyncCenterProps> = ({
   const handleVerifyWrite = async () => {
     setVerifyStatus({ loading: true, message: 'Testing direct write and server confirmation with Cloud Database...' });
     const res = await verifyLiveFirestoreWrite();
-    setVerifyStatus({ loading: false, success: res.success, message: res.message });
+    setVerifyStatus({ loading: false, success: res.success, message: res.message, actionUrl: res.actionUrl });
   };
 
   const handleSaveSettings = async (e: React.FormEvent) => {
@@ -336,6 +337,19 @@ export const SyncCenter: React.FC<SyncCenterProps> = ({
                 : 'Cloud Direct Connection Warning'}
             </span>
             <p className="text-[11px] opacity-90 leading-relaxed">{verifyStatus.message}</p>
+            {verifyStatus.actionUrl && (
+              <div className="mt-2">
+                <a
+                  href={verifyStatus.actionUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-[11px] shadow transition-all"
+                >
+                  <span>Open Firebase Console</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            )}
           </div>
         </div>
       )}

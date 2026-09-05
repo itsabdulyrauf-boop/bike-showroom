@@ -65,6 +65,7 @@ export function getLocalDB(): Promise<IDBPDatabase> {
 
 /**
  * Synchronizes existing data from Cloud to IndexedDB if available.
+ * Uses a safe timeout so offline/unreachable Firestore never blocks initial app startup.
  * Fully reconciles additions, updates, and cloud deletions.
  */
 export async function seedInitialDataIfEmpty(): Promise<void> {
@@ -74,83 +75,95 @@ export async function seedInitialDataIfEmpty(): Promise<void> {
   // Try pulling and reconciling existing data from Cloud if available
   if (firestore) {
     try {
-      console.log('[Cloud Sync] Fetching existing collections from Firebase Firestore...');
-      
-      // 1. Inventory Sync & Reconcile
-      const invSnap = await getDocs(collection(firestore, 'inventory'));
-      const remoteInvIds = new Set<string>();
-      for (const docSnap of invSnap.docs) {
-        const remoteItem = docSnap.data() as InventoryItem;
-        const id = docSnap.id || remoteItem.id;
-        remoteInvIds.add(id);
-        await db.put('inventory', { ...remoteItem, id, syncStatus: 'synced' });
-      }
-      const localInv = await db.getAll('inventory');
-      for (const loc of localInv) {
-        if (!remoteInvIds.has(loc.id) && loc.syncStatus !== 'pending') {
-          await db.delete('inventory', loc.id);
-        }
-      }
+      console.log('[Cloud Sync] Checking Cloud Firestore for remote updates...');
 
-      // 2. Customers Sync & Reconcile
-      const custSnap = await getDocs(collection(firestore, 'customers'));
-      const remoteCustIds = new Set<string>();
-      for (const docSnap of custSnap.docs) {
-        const remoteCust = docSnap.data() as CustomerItem;
-        const id = docSnap.id || remoteCust.id;
-        remoteCustIds.add(id);
-        await db.put('customers', { ...remoteCust, id, syncStatus: 'synced' });
-      }
-      const localCust = await db.getAll('customers');
-      for (const loc of localCust) {
-        if (!remoteCustIds.has(loc.id) && loc.syncStatus !== 'pending') {
-          await db.delete('customers', loc.id);
-        }
-      }
-
-      // 3. Expenses Sync & Reconcile
-      const expSnap = await getDocs(collection(firestore, 'expenses'));
-      const remoteExpIds = new Set<string>();
-      for (const docSnap of expSnap.docs) {
-        const remoteExp = docSnap.data() as ExpenseRecord;
-        const id = docSnap.id || remoteExp.id;
-        remoteExpIds.add(id);
-        await db.put('expenses', { ...remoteExp, id, syncStatus: 'synced' });
-      }
-      const localExp = await db.getAll('expenses');
-      for (const loc of localExp) {
-        if (!remoteExpIds.has(loc.id) && loc.syncStatus !== 'pending') {
-          await db.delete('expenses', loc.id);
-        }
-      }
-
-      // 4. Sales Sync & Reconcile (deletes sales locally if removed on Firestore)
-      const salesSnap = await getDocs(collection(firestore, 'sales'));
-      const remoteSalesIds = new Set<string>();
-      for (const docSnap of salesSnap.docs) {
-        const remoteSale = docSnap.data() as SaleRecord;
-        const id = docSnap.id || remoteSale.id;
-        remoteSalesIds.add(id);
-        await db.put('sales', { ...remoteSale, id, syncStatus: 'synced' });
-      }
-      const localSales = await db.getAll('sales');
-      for (const loc of localSales) {
-        if (!remoteSalesIds.has(loc.id) && loc.syncStatus !== 'pending') {
-          await db.delete('sales', loc.id);
-        }
-      }
-
-      // 5. Settings Sync
-      const settingsSnap = await getDocs(collection(firestore, 'settings'));
-      if (!settingsSnap.empty) {
-        for (const docSnap of settingsSnap.docs) {
-          if (docSnap.id === 'showroom_main_settings') {
-            await db.put('settings', { ...docSnap.data(), id: 'showroom_main_settings' } as ShowroomSettings);
+      const syncWithCloud = async () => {
+        try {
+          // 1. Inventory Sync & Reconcile
+          const invSnap = await getDocs(collection(firestore, 'inventory'));
+          const remoteInvIds = new Set<string>();
+          for (const docSnap of invSnap.docs) {
+            const remoteItem = docSnap.data() as InventoryItem;
+            const id = docSnap.id || remoteItem.id;
+            remoteInvIds.add(id);
+            await db.put('inventory', { ...remoteItem, id, syncStatus: 'synced' });
           }
+          const localInv = await db.getAll('inventory');
+          for (const loc of localInv) {
+            if (!remoteInvIds.has(loc.id) && loc.syncStatus !== 'pending') {
+              await db.delete('inventory', loc.id);
+            }
+          }
+
+          // 2. Customers Sync & Reconcile
+          const custSnap = await getDocs(collection(firestore, 'customers'));
+          const remoteCustIds = new Set<string>();
+          for (const docSnap of custSnap.docs) {
+            const remoteCust = docSnap.data() as CustomerItem;
+            const id = docSnap.id || remoteCust.id;
+            remoteCustIds.add(id);
+            await db.put('customers', { ...remoteCust, id, syncStatus: 'synced' });
+          }
+          const localCust = await db.getAll('customers');
+          for (const loc of localCust) {
+            if (!remoteCustIds.has(loc.id) && loc.syncStatus !== 'pending') {
+              await db.delete('customers', loc.id);
+            }
+          }
+
+          // 3. Expenses Sync & Reconcile
+          const expSnap = await getDocs(collection(firestore, 'expenses'));
+          const remoteExpIds = new Set<string>();
+          for (const docSnap of expSnap.docs) {
+            const remoteExp = docSnap.data() as ExpenseRecord;
+            const id = docSnap.id || remoteExp.id;
+            remoteExpIds.add(id);
+            await db.put('expenses', { ...remoteExp, id, syncStatus: 'synced' });
+          }
+          const localExp = await db.getAll('expenses');
+          for (const loc of localExp) {
+            if (!remoteExpIds.has(loc.id) && loc.syncStatus !== 'pending') {
+              await db.delete('expenses', loc.id);
+            }
+          }
+
+          // 4. Sales Sync & Reconcile
+          const salesSnap = await getDocs(collection(firestore, 'sales'));
+          const remoteSalesIds = new Set<string>();
+          for (const docSnap of salesSnap.docs) {
+            const remoteSale = docSnap.data() as SaleRecord;
+            const id = docSnap.id || remoteSale.id;
+            remoteSalesIds.add(id);
+            await db.put('sales', { ...remoteSale, id, syncStatus: 'synced' });
+          }
+          const localSales = await db.getAll('sales');
+          for (const loc of localSales) {
+            if (!remoteSalesIds.has(loc.id) && loc.syncStatus !== 'pending') {
+              await db.delete('sales', loc.id);
+            }
+          }
+
+          // 5. Settings Sync
+          const settingsSnap = await getDocs(collection(firestore, 'settings'));
+          if (!settingsSnap.empty) {
+            for (const docSnap of settingsSnap.docs) {
+              if (docSnap.id === 'showroom_main_settings') {
+                await db.put('settings', { ...docSnap.data(), id: 'showroom_main_settings' } as ShowroomSettings);
+              }
+            }
+          }
+        } catch (err: any) {
+          console.warn('[Cloud Sync] Cloud sync note (operating in offline-first mode):', err?.message || err);
         }
-      }
+      };
+
+      // Cap initial sync wait to 2.5 seconds to guarantee lightning-fast startup
+      await Promise.race([
+        syncWithCloud(),
+        new Promise<void>((resolve) => setTimeout(resolve, 2500)),
+      ]);
     } catch (err) {
-      console.warn('Initial Cloud data sync check:', err);
+      console.warn('[Cloud Sync] Initial cloud fetch skipped:', err);
     }
   }
 
@@ -164,29 +177,6 @@ export async function seedInitialDataIfEmpty(): Promise<void> {
 // ================= INVENTORY CRUD =================
 export async function getAllInventory(): Promise<InventoryItem[]> {
   const db = await getLocalDB();
-  const firestore = getFirestoreDb();
-
-  // Try fetching fresh inventory from Firestore and reconcile deletions
-  if (firestore) {
-    try {
-      const invSnap = await getDocs(collection(firestore, 'inventory'));
-      const remoteIds = new Set<string>();
-      for (const docSnap of invSnap.docs) {
-        const remoteItem = docSnap.data() as InventoryItem;
-        const itemId = docSnap.id || remoteItem.id;
-        remoteIds.add(itemId);
-        await db.put('inventory', { ...remoteItem, id: itemId, syncStatus: 'synced' });
-      }
-      const localItems = await db.getAll('inventory');
-      for (const loc of localItems) {
-        if (!remoteIds.has(loc.id) && loc.syncStatus !== 'pending') {
-          await db.delete('inventory', loc.id);
-        }
-      }
-    } catch (err) {
-      console.warn('Error fetching fresh inventory from Cloud Firestore:', err);
-    }
-  }
 
   // Auto-reconcile: If any item's chassis/engine was already sold in completed sales, ensure status is 'Sold'
   try {
@@ -221,6 +211,7 @@ export async function getAllInventory(): Promise<InventoryItem[]> {
         inv.updatedAt = new Date().toISOString();
         await db.put('inventory', inv);
 
+        const firestore = getFirestoreDb();
         if (firestore) {
           try {
             await setDoc(doc(firestore, 'inventory', inv.id), sanitizeForFirestore(inv), { merge: true });
@@ -281,31 +272,6 @@ export async function deleteInventoryItem(id: string): Promise<void> {
 // ================= SALES CRUD =================
 export async function getAllSales(): Promise<SaleRecord[]> {
   const db = await getLocalDB();
-  const firestore = getFirestoreDb();
-
-  if (firestore) {
-    try {
-      const salesSnap = await getDocs(collection(firestore, 'sales'));
-      const remoteIds = new Set<string>();
-      for (const docSnap of salesSnap.docs) {
-        const remoteSale = docSnap.data() as SaleRecord;
-        const saleId = docSnap.id || remoteSale.id;
-        remoteIds.add(saleId);
-        await db.put('sales', { ...remoteSale, id: saleId, syncStatus: 'synced' });
-      }
-
-      // Reconcile: If a sale was deleted from Firestore, delete it from local IndexedDB
-      const localSales = await db.getAll('sales');
-      for (const localSale of localSales) {
-        if (!remoteIds.has(localSale.id) && localSale.syncStatus !== 'pending') {
-          await db.delete('sales', localSale.id);
-        }
-      }
-    } catch (err) {
-      console.warn('Error fetching fresh sales from Cloud Firestore:', err);
-    }
-  }
-
   const sales = await db.getAll('sales');
   return sales.sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -497,31 +463,6 @@ export async function saveSaleRecord(sale: SaleRecord): Promise<void> {
 // ================= CUSTOMERS CRUD =================
 export async function getAllCustomers(): Promise<CustomerItem[]> {
   const db = await getLocalDB();
-  const firestore = getFirestoreDb();
-
-  if (firestore) {
-    try {
-      const custSnap = await getDocs(collection(firestore, 'customers'));
-      const remoteIds = new Set<string>();
-      for (const docSnap of custSnap.docs) {
-        const remoteCust = docSnap.data() as CustomerItem;
-        const custId = docSnap.id || remoteCust.id;
-        remoteIds.add(custId);
-        await db.put('customers', { ...remoteCust, id: custId, syncStatus: 'synced' });
-      }
-
-      // Reconcile: If a customer was deleted from Firestore, delete it from local IndexedDB
-      const localCusts = await db.getAll('customers');
-      for (const localCust of localCusts) {
-        if (!remoteIds.has(localCust.id) && localCust.syncStatus !== 'pending') {
-          await db.delete('customers', localCust.id);
-        }
-      }
-    } catch (err) {
-      console.warn('Error fetching fresh customers from Cloud Firestore:', err);
-    }
-  }
-
   return db.getAll('customers');
 }
 
@@ -568,31 +509,6 @@ export async function deleteCustomer(id: string): Promise<void> {
 // ================= EXPENSES CRUD =================
 export async function getAllExpenses(): Promise<ExpenseRecord[]> {
   const db = await getLocalDB();
-  const firestore = getFirestoreDb();
-
-  if (firestore) {
-    try {
-      const expSnap = await getDocs(collection(firestore, 'expenses'));
-      const remoteIds = new Set<string>();
-      for (const docSnap of expSnap.docs) {
-        const remoteExp = docSnap.data() as ExpenseRecord;
-        const expId = docSnap.id || remoteExp.id;
-        remoteIds.add(expId);
-        await db.put('expenses', { ...remoteExp, id: expId, syncStatus: 'synced' });
-      }
-
-      // Reconcile: If an expense was deleted from Firestore, delete it from local IndexedDB
-      const localExps = await db.getAll('expenses');
-      for (const localExp of localExps) {
-        if (!remoteIds.has(localExp.id) && localExp.syncStatus !== 'pending') {
-          await db.delete('expenses', localExp.id);
-        }
-      }
-    } catch (err) {
-      console.warn('Error fetching fresh expenses from Cloud Firestore:', err);
-    }
-  }
-
   const expenses = await db.getAll('expenses');
   return expenses.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }

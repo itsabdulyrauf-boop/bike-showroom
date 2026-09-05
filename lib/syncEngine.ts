@@ -1,5 +1,5 @@
 import { doc, setDoc, getDocs, collection } from 'firebase/firestore';
-import { getFirestoreDb, sanitizeForFirestore } from './firebase';
+import { getFirestoreDb, sanitizeForFirestore, checkFirestoreHealth } from './firebase';
 import {
   getLocalDB,
   getAllInventory,
@@ -70,7 +70,16 @@ export async function performManualCloudSync(): Promise<SyncResult> {
     return result;
   }
 
-  addLog('Starting manual cloud sync operation with Cloud Database...');
+  addLog('Verifying Cloud Database connectivity...');
+  const health = await checkFirestoreHealth();
+  if (!health.connected) {
+    result.success = false;
+    result.errors.push(health.message);
+    addLog(`Sync note: ${health.message}`);
+    return result;
+  }
+
+  addLog('Connection verified. Starting cloud sync operation with Cloud Database...');
   const localDb = await getLocalDB();
 
   // 1. SYNC INVENTORY

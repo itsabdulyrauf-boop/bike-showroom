@@ -1,5 +1,12 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
-import { getFirestore, Firestore, doc, setDoc, getDocFromServer } from 'firebase/firestore';
+import {
+  initializeFirestore,
+  getFirestore,
+  Firestore,
+  doc,
+  setDoc,
+  getDocFromServer,
+} from 'firebase/firestore';
 import { getAnalytics, isSupported, Analytics } from 'firebase/analytics';
 import firebaseConfigJson from '../firebase-applet-config.json';
 
@@ -104,10 +111,22 @@ export function getFirestoreDb(): Firestore | null {
 
   try {
     const customDatabaseId = firebaseConfig.firestoreDatabaseId;
+    const firestoreSettings = {
+      experimentalAutoDetectLongPolling: true,
+    };
+
     if (customDatabaseId && customDatabaseId !== '(default)' && customDatabaseId !== 'default') {
-      db = getFirestore(app, customDatabaseId);
+      try {
+        db = initializeFirestore(app, firestoreSettings, customDatabaseId);
+      } catch {
+        db = getFirestore(app, customDatabaseId);
+      }
     } else {
-      db = getFirestore(app);
+      try {
+        db = initializeFirestore(app, firestoreSettings);
+      } catch {
+        db = getFirestore(app);
+      }
     }
     return db;
   } catch (err) {
@@ -122,25 +141,54 @@ export async function testFirestoreConnection(): Promise<boolean> {
   return status.connected;
 }
 
-export async function checkFirestoreHealth(): Promise<{ connected: boolean; permissionError: boolean; message: string }> {
+export async function checkFirestoreHealth(): Promise<{
+  connected: boolean;
+  permissionError: boolean;
+  message: string;
+  actionUrl?: string;
+}> {
   const database = getFirestoreDb();
   if (!database) {
     return { connected: false, permissionError: false, message: 'Firestore SDK not initialized.' };
   }
   try {
-    await getDocFromServer(doc(database, 'settings', 'connection_test'));
+    const checkPromise = getDocFromServer(doc(database, 'settings', 'connection_test'));
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Connection check timed out')), 4000)
+    );
+    await Promise.race([checkPromise, timeoutPromise]);
     return { connected: true, permissionError: false, message: 'Connected to Firestore successfully.' };
   } catch (error: any) {
     const msg = error?.message || String(error);
-    if (error?.code === 'permission-denied' || msg.includes('permission') || msg.includes('Missing or insufficient permissions')) {
+    const code = error?.code || '';
+
+    if (
+      code === 'permission-denied' ||
+      msg.includes('Cloud Firestore API has not been used') ||
+      msg.includes('disabled') ||
+      msg.includes('has not been used in project')
+    ) {
+      return {
+        connected: false,
+        permissionError: true,
+        message: `Cloud Firestore API is not enabled or database has not been created in Firebase project "${firebaseConfig.projectId}". Please open Firebase Console and click "Create Database".`,
+        actionUrl: `https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore`,
+      };
+    }
+    if (code === 'permission-denied' || msg.includes('permission') || msg.includes('Missing or insufficient permissions')) {
       return {
         connected: false,
         permissionError: true,
         message: 'Firebase Security Rules Permission Denied! In Firebase Console -> Firestore Database -> Rules tab, allow read/write access.',
+        actionUrl: `https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore/rules`,
       };
     }
-    if (msg.includes('the client is offline')) {
-      return { connected: false, permissionError: false, message: 'Firestore client is currently offline.' };
+    if (code === 'unavailable' || msg.includes('the client is offline') || msg.includes('timed out') || msg.includes('Could not reach Cloud Firestore')) {
+      return {
+        connected: false,
+        permissionError: false,
+        message: 'Firestore backend is currently unreachable (operating smoothly in local offline mode).',
+      };
     }
     if (error?.name === 'AbortError' || msg.includes('aborted') || msg.includes('user aborted')) {
       return { connected: false, permissionError: false, message: 'Request was cancelled.' };
@@ -150,10 +198,14 @@ export async function checkFirestoreHealth(): Promise<{ connected: boolean; perm
 }
 
 /**
-  * Directly writes a test document to Firestore and reads it back from the server
-  * to verify live database connectivity and write access.
-  */
-export async function verifyLiveFirestoreWrite(): Promise<{ success: boolean; message: string }> {
+ * Directly writes a test document to Firestore and reads it back from the server
+ * to verify live database connectivity and write access.
+ */
+export async function verifyLiveFirestoreWrite(): Promise<{
+  success: boolean;
+  message: string;
+  actionUrl?: string;
+}> {
   const database = getFirestoreDb();
   if (!database) {
     return { success: false, message: 'Firestore SDK is not initialized.' };
@@ -165,11 +217,19 @@ export async function verifyLiveFirestoreWrite(): Promise<{ success: boolean; me
       status: 'active',
       appProject: firebaseConfig.projectId,
     };
-    await setDoc(testDocRef, testData, { merge: true });
 
-    // Immediately fetch from server to verify write succeeded on remote database
-    const snap = await getDocFromServer(testDocRef);
-    if (snap.exists()) {
+    const writePromise = (async () => {
+      await setDoc(testDocRef, testData, { merge: true });
+      const snap = await getDocFromServer(testDocRef);
+      return snap.exists();
+    })();
+
+    const timeoutPromise = new Promise<boolean>((_, reject) =>
+      setTimeout(() => reject(new Error('Write test timed out (server unreachable)')), 5000)
+    );
+
+    const exists = await Promise.race([writePromise, timeoutPromise]);
+    if (exists) {
       return {
         success: true,
         message: `Verified! Document successfully written and confirmed on Firestore Cloud Server (${firebaseConfig.projectId}) at ${new Date().toLocaleTimeString()}!`,
@@ -181,9 +241,40 @@ export async function verifyLiveFirestoreWrite(): Promise<{ success: boolean; me
       };
     }
   } catch (err: any) {
+    const msg = err?.message || String(err);
+    const code = err?.code || '';
+
+    if (
+      code === 'permission-denied' ||
+      msg.includes('Cloud Firestore API has not been used') ||
+      msg.includes('disabled') ||
+      msg.includes('has not been used in project')
+    ) {
+      return {
+        success: false,
+        message: `Cloud Firestore API is not enabled or database has not been created yet in Firebase project "${firebaseConfig.projectId}". Please visit the Firebase Console to create the database.`,
+        actionUrl: `https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore`,
+      };
+    }
+
+    if (code === 'permission-denied' || msg.includes('permission') || msg.includes('Missing or insufficient permissions')) {
+      return {
+        success: false,
+        message: `Permission Denied: Firebase Security Rules prevented the write. Please publish permissive rules in the Firebase Console.`,
+        actionUrl: `https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore/rules`,
+      };
+    }
+
+    if (code === 'unavailable' || msg.includes('timed out') || msg.includes('Could not reach Cloud Firestore') || msg.includes('offline')) {
+      return {
+        success: false,
+        message: `Cloud Firestore is currently unreachable (network timeout or offline). Your changes are safely stored in local IndexedDB and will sync once connected.`,
+      };
+    }
+
     return {
       success: false,
-      message: `Firestore Cloud Test Failed: ${err?.message || String(err)}`,
+      message: `Firestore Cloud Test Failed: ${msg}`,
     };
   }
 }

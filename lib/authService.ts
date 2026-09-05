@@ -30,18 +30,20 @@ export async function getAuthCredentials(): Promise<AuthCredentials> {
     console.warn('Error fetching local auth credentials:', err);
   }
 
-  // 2. Try Firestore
+  // 2. Try Firestore with timeout fallback
   if (firestore) {
     try {
       const docRef = doc(firestore, 'settings', 'auth_credentials');
-      const snap = await getDoc(docRef);
-      if (snap.exists()) {
+      const fetchPromise = getDoc(docRef);
+      const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000));
+      const snap = await Promise.race([fetchPromise, timeoutPromise]);
+      if (snap && snap.exists()) {
         const firestoreCreds = snap.data() as AuthCredentials;
         await localDb.put('settings', { ...firestoreCreds, id: 'auth_main_credentials' });
         return firestoreCreds;
       }
     } catch (err) {
-      console.warn('Error fetching Firestore auth credentials:', err);
+      console.warn('[Auth] Remote auth check skipped (operating offline-first):', err);
     }
   }
 
@@ -64,14 +66,14 @@ export async function saveAuthCredentials(creds: AuthCredentials): Promise<void>
   // Save to local IndexedDB
   await localDb.put('settings', credsToSave);
 
-  // Save to Firestore
+  // Save to Firestore if available
   const firestore = getFirestoreDb();
   if (firestore) {
     try {
       const docRef = doc(firestore, 'settings', 'auth_credentials');
       await setDoc(docRef, credsToSave, { merge: true });
-    } catch (err) {
-      console.error('Error saving credentials to Firestore:', err);
+    } catch (err: any) {
+      console.warn('[Auth] Cloud credential sync note (offline or uncreated):', err?.message || err);
     }
   }
 }
