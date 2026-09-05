@@ -1,0 +1,108 @@
+{
+  "entities": {
+    "inventory": {
+      "title": "Inventory Item",
+      "description": "Bike showroom motorcycle inventory items",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "make": { "type": "string" },
+        "model": { "type": "string" },
+        "variant": { "type": "string" },
+        "year": { "type": "string" },
+        "chassisNumber": { "type": "string" },
+        "engineNumber": { "type": "string" },
+        "color": { "type": "string" },
+        "purchasePricePKR": { "type": "number" },
+        "sellingPricePKR": { "type": "number" },
+        "stockCount": { "type": "number" },
+        "status": { "type": "string" },
+        "notes": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "syncStatus": { "type": "string" }
+      },
+      "required": ["id", "make", "model", "chassisNumber", "engineNumber", "sellingPricePKR"]
+    },
+    "sales": {
+      "title": "Sale Record",
+      "description": "POS sales invoice transactions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "customerCnic": { "type": "string" },
+        "customerAddress": { "type": "string" },
+        "totalPKR": { "type": "number" },
+        "paidAmountPKR": { "type": "number" },
+        "paymentMethod": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "syncStatus": { "type": "string" }
+      },
+      "required": ["id", "invoiceNumber", "customerName", "totalPKR"]
+    },
+    "expenses": {
+      "title": "Showroom Expense",
+      "description": "Operational expenses in PKR",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string" },
+        "amountPKR": { "type": "number" },
+        "date": { "type": "string" },
+        "syncStatus": { "type": "string" }
+      },
+      "required": ["id", "title", "category", "amountPKR"]
+    },
+    "customers": {
+      "title": "Customer Record",
+      "description": "Registered showroom customers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "cnic": { "type": "string" },
+        "syncStatus": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "settings": {
+      "title": "Showroom & Auth Settings",
+      "description": "Showroom branding parameters and login auth credentials",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "showroomName": { "type": "string" },
+        "email": { "type": "string" },
+        "passwordHashOrPlain": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id"]
+    }
+  },
+  "firestore": {
+    "/inventory/{itemId}": {
+      "schema": { "$ref": "#/entities/inventory" },
+      "description": "Motorcycle inventory documents"
+    },
+    "/sales/{saleId}": {
+      "schema": { "$ref": "#/entities/sales" },
+      "description": "Sales invoice transaction records"
+    },
+    "/expenses/{expenseId}": {
+      "schema": { "$ref": "#/entities/expenses" },
+      "description": "Showroom operational expenses"
+    },
+    "/customers/{customerId}": {
+      "schema": { "$ref": "#/entities/customers" },
+      "description": "Customer contact & history records"
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/settings" },
+      "description": "Showroom configuration & auth credentials"
+    }
+  }
+}

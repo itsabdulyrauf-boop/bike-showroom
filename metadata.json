@@ -1,0 +1,8 @@
+{
+  "name": "Remix Bike Showroom Management \u0026 POS System",
+  "description": "Offline-first bike showroom inventory management, quick POS checkout, invoice printing, and expense tracking with Cloud sync in PKR.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
