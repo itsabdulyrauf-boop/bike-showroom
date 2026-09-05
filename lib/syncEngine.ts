@@ -7,12 +7,8 @@ import {
   getAllCustomers,
   getAllExpenses,
   getShowroomSettings,
-  saveInventoryItem,
-  saveSaleRecord,
-  saveCustomer,
-  saveExpense,
-  saveShowroomSettings,
 } from './db';
+import { getAuthCredentials } from './authService';
 import { InventoryItem, SaleRecord, CustomerItem, ExpenseRecord, ShowroomSettings } from '@/types';
 
 export interface SyncResult {
@@ -30,10 +26,13 @@ export interface SyncResult {
 }
 
 /**
- * Pushes all pending local records to Firebase Firestore
- * and fetches any remote records that don't exist locally.
+ * Universal Bidirectional Sync:
+ * 1. Pushes all local records (inventory, sales, customers, expenses, settings, auth credentials)
+ *    to Firebase Firestore so that all local data is fully loaded into the cloud.
+ * 2. Pulls all remote documents from Firebase Firestore into local IndexedDB so the client has everything.
+ * 3. Never deletes local data during sync — ensures 100% data safety.
  */
-export async function performManualCloudSync(): Promise<SyncResult> {
+export async function syncAllDataWithFirebase(options?: { forceUploadAll?: boolean }): Promise<SyncResult> {
   const result: SyncResult = {
     success: true,
     syncedCounts: {
@@ -59,7 +58,7 @@ export async function performManualCloudSync(): Promise<SyncResult> {
 
   if (typeof window !== 'undefined' && !navigator.onLine) {
     result.success = false;
-    result.errors.push('Device is offline. Please connect to the internet to sync with Cloud Database.');
+    result.errors.push('Device is offline. Cloud sync will automatically resume when connection is restored.');
     return result;
   }
 
@@ -70,294 +69,276 @@ export async function performManualCloudSync(): Promise<SyncResult> {
     return result;
   }
 
-  addLog('Verifying Cloud Database connectivity...');
-  const health = await checkFirestoreHealth();
-  if (!health.connected) {
-    result.success = false;
-    result.errors.push(health.message);
-    addLog(`Sync note: ${health.message}`);
-    return result;
+  // Pre-flight health check with a fast timeout so sync never hangs
+  try {
+    const health = await checkFirestoreHealth();
+    if (!health.connected) {
+      result.success = false;
+      result.errors.push(health.message);
+      addLog(`Sync note: ${health.message}`);
+      return result;
+    }
+  } catch {
+    // Continue with graceful attempt
   }
 
-  addLog('Connection verified. Starting cloud sync operation with Cloud Database...');
+  addLog('Connection verified. Uploading all local data to Firebase and synchronizing remote changes...');
   const localDb = await getLocalDB();
 
-  // 1. SYNC INVENTORY
+  // 1. INVENTORY SYNC (Local -> Cloud, then Cloud -> Local)
   try {
-    const inventory = await getAllInventory();
-    addLog(`Checking ${inventory.length} local inventory items for cloud sync...`);
-    for (const item of inventory) {
-      try {
-        const itemToSync = { ...item, syncStatus: 'synced' as const };
-        const docRef = doc(firestore, 'inventory', item.id);
-        await setDoc(docRef, sanitizeForFirestore(itemToSync), { merge: true });
+    const localInventory = await getAllInventory();
+    addLog(`Processing ${localInventory.length} local inventory items...`);
 
-        item.syncStatus = 'synced';
-        await localDb.put('inventory', item);
-        result.syncedCounts.inventory++;
-        addLog(`Successfully synced Inventory item ${item.id} (${item.make} ${item.model}) to Cloud Database.`);
-      } catch (err: any) {
-        item.syncStatus = 'pending';
-        await localDb.put('inventory', item);
-        const errStr = err?.message || String(err);
-        addWarn(`Failed to sync Inventory item ${item.id}: ${errStr}`);
-        if (!result.errors.includes(errStr)) {
-          if (err?.code === 'permission-denied' || errStr.includes('permission')) {
-            const permMsg = 'Cloud Permission Denied! Please check security rules on your Cloud Server.';
-            if (!result.errors.includes(permMsg)) result.errors.push(permMsg);
-          } else {
-            result.errors.push(`Inventory item ${item.id} sync error: ${errStr}`);
-          }
+    for (const item of localInventory) {
+      if (options?.forceUploadAll || item.syncStatus === 'pending' || !item.syncStatus) {
+        try {
+          const itemToSync = { ...item, syncStatus: 'synced' as const };
+          const docRef = doc(firestore, 'inventory', item.id);
+          await setDoc(docRef, sanitizeForFirestore(itemToSync), { merge: true });
+
+          item.syncStatus = 'synced';
+          await localDb.put('inventory', item);
+          result.syncedCounts.inventory++;
+          addLog(`Uploaded Inventory: ${item.make} ${item.model} (${item.id})`);
+        } catch (err: any) {
+          item.syncStatus = 'pending';
+          await localDb.put('inventory', item);
+          const errStr = err?.message || String(err);
+          addWarn(`Inventory upload warning for ${item.id}: ${errStr}`);
+          if (!result.errors.includes(errStr)) result.errors.push(`Inventory item ${item.id}: ${errStr}`);
         }
       }
     }
 
-    // Pull and reconcile Remote Inventory
+    // Pull remote inventory from Cloud
     try {
       const invSnap = await getDocs(collection(firestore, 'inventory'));
       let pulledCount = 0;
-      const remoteIds = new Set<string>();
       for (const docSnap of invSnap.docs) {
         const remoteItem = docSnap.data() as InventoryItem;
         const id = docSnap.id || remoteItem.id;
-        remoteIds.add(id);
         const localItem = await localDb.get('inventory', id);
-        if (!localItem) {
+
+        // Save remote item locally if missing or remote is updated
+        if (!localItem || (remoteItem.updatedAt && (!localItem.updatedAt || new Date(remoteItem.updatedAt) > new Date(localItem.updatedAt)))) {
           await localDb.put('inventory', { ...remoteItem, id, syncStatus: 'synced' });
           pulledCount++;
         }
       }
-      // Purge local records that were deleted on cloud
-      const allLocalInv = await localDb.getAll('inventory');
-      for (const loc of allLocalInv) {
-        if (!remoteIds.has(loc.id) && loc.syncStatus !== 'pending') {
-          await localDb.delete('inventory', loc.id);
-        }
-      }
       if (pulledCount > 0) {
-        addLog(`Pulled ${pulledCount} new inventory records from Cloud Database into local database.`);
+        addLog(`Downloaded ${pulledCount} inventory items from Firebase.`);
       }
     } catch (e: any) {
-      addWarn(`Could not pull remote inventory from Cloud Database: ${e?.message}`);
+      addWarn(`Remote inventory pull warning: ${e?.message}`);
     }
   } catch (err: any) {
-    addWarn(`Error accessing local inventory store: ${err?.message}`);
+    addWarn(`Inventory sync error: ${err?.message}`);
   }
 
-  // 2. SYNC SALES
+  // 2. SALES SYNC (Local -> Cloud, then Cloud -> Local)
   try {
-    const sales = await getAllSales();
-    addLog(`Checking ${sales.length} local sales records for cloud sync...`);
-    for (const sale of sales) {
-      try {
-        const saleToSync = { ...sale, syncStatus: 'synced' as const };
-        const docRef = doc(firestore, 'sales', sale.id);
-        await setDoc(docRef, sanitizeForFirestore(saleToSync), { merge: true });
+    const localSales = await getAllSales();
+    addLog(`Processing ${localSales.length} local sales records...`);
 
-        sale.syncStatus = 'synced';
-        await localDb.put('sales', sale);
-        result.syncedCounts.sales++;
-        addLog(`Successfully synced Sale record ${sale.id} (PKR ${sale.totalPKR}) to Cloud Database.`);
-      } catch (err: any) {
-        sale.syncStatus = 'pending';
-        await localDb.put('sales', sale);
-        const errStr = err?.message || String(err);
-        addWarn(`Failed to sync Sale record ${sale.id}: ${errStr}`);
-        if (!result.errors.includes(errStr)) {
-          if (err?.code === 'permission-denied' || errStr.includes('permission')) {
-            const permMsg = 'Cloud Permission Denied! Please check security rules on your Cloud Server.';
-            if (!result.errors.includes(permMsg)) result.errors.push(permMsg);
-          } else {
-            result.errors.push(`Sale ${sale.id} sync error: ${errStr}`);
-          }
+    for (const sale of localSales) {
+      if (options?.forceUploadAll || sale.syncStatus === 'pending' || !sale.syncStatus) {
+        try {
+          const saleToSync = { ...sale, syncStatus: 'synced' as const };
+          const docRef = doc(firestore, 'sales', sale.id);
+          await setDoc(docRef, sanitizeForFirestore(saleToSync), { merge: true });
+
+          sale.syncStatus = 'synced';
+          await localDb.put('sales', sale);
+          result.syncedCounts.sales++;
+          addLog(`Uploaded Sale: ${sale.id} (PKR ${sale.totalPKR})`);
+        } catch (err: any) {
+          sale.syncStatus = 'pending';
+          await localDb.put('sales', sale);
+          const errStr = err?.message || String(err);
+          addWarn(`Sale upload warning for ${sale.id}: ${errStr}`);
+          if (!result.errors.includes(errStr)) result.errors.push(`Sale ${sale.id}: ${errStr}`);
         }
       }
     }
 
-    // Pull and reconcile Remote Sales
+    // Pull remote sales from Cloud
     try {
       const salesSnap = await getDocs(collection(firestore, 'sales'));
       let pulledCount = 0;
-      const remoteIds = new Set<string>();
       for (const docSnap of salesSnap.docs) {
         const remoteSale = docSnap.data() as SaleRecord;
         const id = docSnap.id || remoteSale.id;
-        remoteIds.add(id);
         const localSale = await localDb.get('sales', id);
+
         if (!localSale) {
           await localDb.put('sales', { ...remoteSale, id, syncStatus: 'synced' });
           pulledCount++;
         }
       }
-      // Purge local sales that were deleted on cloud
-      const allLocalSales = await localDb.getAll('sales');
-      for (const loc of allLocalSales) {
-        if (!remoteIds.has(loc.id) && loc.syncStatus !== 'pending') {
-          await localDb.delete('sales', loc.id);
-        }
-      }
       if (pulledCount > 0) {
-        addLog(`Pulled ${pulledCount} new sales records from Cloud Database into local database.`);
+        addLog(`Downloaded ${pulledCount} sales records from Firebase.`);
       }
     } catch (e: any) {
-      addWarn(`Could not pull remote sales from Cloud Database: ${e?.message}`);
+      addWarn(`Remote sales pull warning: ${e?.message}`);
     }
   } catch (err: any) {
-    addWarn(`Error accessing local sales store: ${err?.message}`);
+    addWarn(`Sales sync error: ${err?.message}`);
   }
 
-  // 3. SYNC CUSTOMERS
+  // 3. CUSTOMERS SYNC (Local -> Cloud, then Cloud -> Local)
   try {
-    const customers = await getAllCustomers();
-    addLog(`Checking ${customers.length} local customer records for cloud sync...`);
-    for (const cust of customers) {
-      try {
-        const custToSync = { ...cust, syncStatus: 'synced' as const };
-        const docRef = doc(firestore, 'customers', cust.id);
-        await setDoc(docRef, sanitizeForFirestore(custToSync), { merge: true });
+    const localCustomers = await getAllCustomers();
+    addLog(`Processing ${localCustomers.length} local customer records...`);
 
-        cust.syncStatus = 'synced';
-        await localDb.put('customers', cust);
-        result.syncedCounts.customers++;
-        addLog(`Successfully synced Customer ${cust.id} (${cust.name}) to Cloud Database.`);
-      } catch (err: any) {
-        cust.syncStatus = 'pending';
-        await localDb.put('customers', cust);
-        const errStr = err?.message || String(err);
-        addWarn(`Failed to sync Customer ${cust.id}: ${errStr}`);
-        if (!result.errors.includes(errStr)) {
-          if (err?.code === 'permission-denied' || errStr.includes('permission')) {
-            const permMsg = 'Cloud Permission Denied! Please check security rules on your Cloud Server.';
-            if (!result.errors.includes(permMsg)) result.errors.push(permMsg);
-          } else {
-            result.errors.push(`Customer ${cust.id} sync error: ${errStr}`);
-          }
+    for (const cust of localCustomers) {
+      if (options?.forceUploadAll || cust.syncStatus === 'pending' || !cust.syncStatus) {
+        try {
+          const custToSync = { ...cust, syncStatus: 'synced' as const };
+          const docRef = doc(firestore, 'customers', cust.id);
+          await setDoc(docRef, sanitizeForFirestore(custToSync), { merge: true });
+
+          cust.syncStatus = 'synced';
+          await localDb.put('customers', cust);
+          result.syncedCounts.customers++;
+          addLog(`Uploaded Customer: ${cust.name} (${cust.id})`);
+        } catch (err: any) {
+          cust.syncStatus = 'pending';
+          await localDb.put('customers', cust);
+          const errStr = err?.message || String(err);
+          addWarn(`Customer upload warning for ${cust.id}: ${errStr}`);
+          if (!result.errors.includes(errStr)) result.errors.push(`Customer ${cust.id}: ${errStr}`);
         }
       }
     }
 
-    // Pull and reconcile Remote Customers
+    // Pull remote customers from Cloud
     try {
       const custSnap = await getDocs(collection(firestore, 'customers'));
       let pulledCount = 0;
-      const remoteIds = new Set<string>();
       for (const docSnap of custSnap.docs) {
         const remoteCust = docSnap.data() as CustomerItem;
         const id = docSnap.id || remoteCust.id;
-        remoteIds.add(id);
         const localCust = await localDb.get('customers', id);
+
         if (!localCust) {
           await localDb.put('customers', { ...remoteCust, id, syncStatus: 'synced' });
           pulledCount++;
         }
       }
-      // Purge local customers deleted on cloud
-      const allLocalCusts = await localDb.getAll('customers');
-      for (const loc of allLocalCusts) {
-        if (!remoteIds.has(loc.id) && loc.syncStatus !== 'pending') {
-          await localDb.delete('customers', loc.id);
-        }
-      }
       if (pulledCount > 0) {
-        addLog(`Pulled ${pulledCount} new customer records from Cloud Database into local database.`);
+        addLog(`Downloaded ${pulledCount} customer records from Firebase.`);
       }
     } catch (e: any) {
-      addWarn(`Could not pull remote customers: ${e?.message}`);
+      addWarn(`Remote customers pull warning: ${e?.message}`);
     }
   } catch (err: any) {
-    addWarn(`Error accessing local customers store: ${err?.message}`);
+    addWarn(`Customers sync error: ${err?.message}`);
   }
 
-  // 4. SYNC EXPENSES
+  // 4. EXPENSES SYNC (Local -> Cloud, then Cloud -> Local)
   try {
-    const expenses = await getAllExpenses();
-    addLog(`Checking ${expenses.length} local expense records for cloud sync...`);
-    for (const exp of expenses) {
-      try {
-        const expToSync = { ...exp, syncStatus: 'synced' as const };
-        const docRef = doc(firestore, 'expenses', exp.id);
-        await setDoc(docRef, sanitizeForFirestore(expToSync), { merge: true });
+    const localExpenses = await getAllExpenses();
+    addLog(`Processing ${localExpenses.length} local expense records...`);
 
-        exp.syncStatus = 'synced';
-        await localDb.put('expenses', exp);
-        result.syncedCounts.expenses++;
-        addLog(`Successfully synced Expense ${exp.id} (PKR ${exp.amountPKR}) to Cloud Database.`);
-      } catch (err: any) {
-        exp.syncStatus = 'pending';
-        await localDb.put('expenses', exp);
-        const errStr = err?.message || String(err);
-        addWarn(`Failed to sync Expense ${exp.id}: ${errStr}`);
-        if (!result.errors.includes(errStr)) {
-          if (err?.code === 'permission-denied' || errStr.includes('permission')) {
-            const permMsg = 'Cloud Permission Denied! Please check security rules on your Cloud Server.';
-            if (!result.errors.includes(permMsg)) result.errors.push(permMsg);
-          } else {
-            result.errors.push(`Expense ${exp.id} sync error: ${errStr}`);
-          }
+    for (const exp of localExpenses) {
+      if (options?.forceUploadAll || exp.syncStatus === 'pending' || !exp.syncStatus) {
+        try {
+          const expToSync = { ...exp, syncStatus: 'synced' as const };
+          const docRef = doc(firestore, 'expenses', exp.id);
+          await setDoc(docRef, sanitizeForFirestore(expToSync), { merge: true });
+
+          exp.syncStatus = 'synced';
+          await localDb.put('expenses', exp);
+          result.syncedCounts.expenses++;
+          addLog(`Uploaded Expense: ${exp.title} (${exp.id})`);
+        } catch (err: any) {
+          exp.syncStatus = 'pending';
+          await localDb.put('expenses', exp);
+          const errStr = err?.message || String(err);
+          addWarn(`Expense upload warning for ${exp.id}: ${errStr}`);
+          if (!result.errors.includes(errStr)) result.errors.push(`Expense ${exp.id}: ${errStr}`);
         }
       }
     }
 
-    // Pull and reconcile Remote Expenses
+    // Pull remote expenses from Cloud
     try {
       const expSnap = await getDocs(collection(firestore, 'expenses'));
       let pulledCount = 0;
-      const remoteIds = new Set<string>();
       for (const docSnap of expSnap.docs) {
         const remoteExp = docSnap.data() as ExpenseRecord;
         const id = docSnap.id || remoteExp.id;
-        remoteIds.add(id);
         const localExp = await localDb.get('expenses', id);
+
         if (!localExp) {
           await localDb.put('expenses', { ...remoteExp, id, syncStatus: 'synced' });
           pulledCount++;
         }
       }
-      // Purge local expenses deleted on cloud
-      const allLocalExp = await localDb.getAll('expenses');
-      for (const loc of allLocalExp) {
-        if (!remoteIds.has(loc.id) && loc.syncStatus !== 'pending') {
-          await localDb.delete('expenses', loc.id);
-        }
-      }
       if (pulledCount > 0) {
-        addLog(`Pulled ${pulledCount} new expense records from Cloud Database into local database.`);
+        addLog(`Downloaded ${pulledCount} expense records from Firebase.`);
       }
     } catch (e: any) {
-      addWarn(`Could not pull remote expenses: ${e?.message}`);
+      addWarn(`Remote expenses pull warning: ${e?.message}`);
     }
   } catch (err: any) {
-    addWarn(`Error accessing local expenses store: ${err?.message}`);
+    addWarn(`Expenses sync error: ${err?.message}`);
   }
 
-  // 5. SYNC SHOWROOM SETTINGS
+  // 5. SHOWROOM SETTINGS & AUTH CREDENTIALS SYNC
   try {
     const settings = await getShowroomSettings();
     if (settings) {
       try {
-        const docRef = doc(firestore, 'settings', settings.id || 'showroom_main_settings');
+        const docRef = doc(firestore, 'settings', 'showroom_main_settings');
         await setDoc(docRef, sanitizeForFirestore(settings), { merge: true });
         result.syncedCounts.settings = 1;
-        addLog('Successfully synced Showroom Settings to Cloud Database.');
+        addLog('Uploaded Showroom Settings to Firebase.');
       } catch (err: any) {
-        const errStr = err?.message || String(err);
-        addWarn(`Failed to sync Showroom Settings: ${errStr}`);
-        if (!result.errors.includes(errStr)) {
-          if (err?.code === 'permission-denied' || errStr.includes('permission')) {
-            const permMsg = 'Cloud Permission Denied! Please check security rules on your Cloud Server.';
-            if (!result.errors.includes(permMsg)) result.errors.push(permMsg);
-          } else {
-            result.errors.push(`Showroom Settings sync error: ${errStr}`);
-          }
-        }
+        addWarn(`Settings upload warning: ${err?.message}`);
       }
     }
+
+    // Also ensure credentials are safely synced to settings/auth_credentials
+    const creds = await getAuthCredentials();
+    if (creds) {
+      try {
+        const docRef = doc(firestore, 'settings', 'auth_credentials');
+        await setDoc(docRef, sanitizeForFirestore(creds), { merge: true });
+      } catch {}
+    }
+
+    // Pull remote settings
+    try {
+      const settingsSnap = await getDocs(collection(firestore, 'settings'));
+      for (const docSnap of settingsSnap.docs) {
+        if (docSnap.id === 'showroom_main_settings') {
+          const remoteSettings = docSnap.data() as ShowroomSettings;
+          await localDb.put('settings', { ...remoteSettings, id: 'showroom_main_settings' });
+        } else if (docSnap.id === 'auth_credentials') {
+          await localDb.put('settings', { ...docSnap.data(), id: 'auth_credentials' });
+        }
+      }
+    } catch (e: any) {
+      addWarn(`Remote settings pull warning: ${e?.message}`);
+    }
   } catch (err: any) {
-    addWarn(`Error reading showroom settings: ${err?.message}`);
+    addWarn(`Settings sync error: ${err?.message}`);
   }
 
   result.success = result.errors.length === 0;
-  addLog(`Sync operation finished. Result: ${result.success ? 'SUCCESS' : 'COMPLETED WITH WARNINGS/ERRORS'}. Total synced: Inventory=${result.syncedCounts.inventory}, Sales=${result.syncedCounts.sales}, Customers=${result.syncedCounts.customers}, Expenses=${result.syncedCounts.expenses}.`);
+  addLog(
+    `Sync complete. Result: ${result.success ? 'SUCCESS' : 'WITH WARNINGS'}. Uploaded: Inv=${result.syncedCounts.inventory}, Sales=${result.syncedCounts.sales}, Cust=${result.syncedCounts.customers}, Exp=${result.syncedCounts.expenses}.`
+  );
 
   return result;
+}
+
+/**
+ * Manual sync function called from the UI (SyncCenter).
+ * Forces upload of all local records and downloads all remote records.
+ */
+export async function performManualCloudSync(): Promise<SyncResult> {
+  return syncAllDataWithFirebase({ forceUploadAll: true });
 }

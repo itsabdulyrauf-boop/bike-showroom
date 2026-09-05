@@ -66,15 +66,15 @@ export async function saveAuthCredentials(creds: AuthCredentials): Promise<void>
   // Save to local IndexedDB
   await localDb.put('settings', credsToSave);
 
-  // Save to Firestore if available
+  // Save to Firestore in background without blocking local return
   const firestore = getFirestoreDb();
   if (firestore) {
-    try {
-      const docRef = doc(firestore, 'settings', 'auth_credentials');
-      await setDoc(docRef, credsToSave, { merge: true });
-    } catch (err: any) {
+    const docRef = doc(firestore, 'settings', 'auth_credentials');
+    const cloudSave = setDoc(docRef, credsToSave, { merge: true });
+    const timeout = new Promise<void>((resolve) => setTimeout(resolve, 1500));
+    Promise.race([cloudSave, timeout]).catch((err: any) => {
       console.warn('[Auth] Cloud credential sync note (offline or uncreated):', err?.message || err);
-    }
+    });
   }
 }
 
@@ -131,7 +131,6 @@ export async function logoutUser(): Promise<void> {
     localStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(SESSION_KEY);
   }
-  await purgeAllLocalCachedData();
 }
 
 /**

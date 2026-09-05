@@ -16,6 +16,7 @@ import { seedInitialDataIfEmpty, getShowroomSettings, getPendingSyncCounts } fro
 import { getStoredSessionUser, getAuthCredentials } from '@/lib/authService';
 import { INITIAL_SHOWROOM_SETTINGS } from '@/lib/sampleData';
 import { getFirebaseAnalytics } from '@/lib/firebase';
+import { syncAllDataWithFirebase } from '@/lib/syncEngine';
 
 export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -71,6 +72,13 @@ export default function Home() {
   useEffect(() => {
     let isMounted = true;
 
+    // Hard fallback: never let initialization block for more than 1.5 seconds under any network conditions
+    const safetyTimer = setTimeout(() => {
+      if (isMounted) {
+        setIsInitializing(false);
+      }
+    }, 1500);
+
     // Initialize Firebase Analytics on client
     getFirebaseAnalytics().catch(() => {});
 
@@ -78,6 +86,7 @@ export default function Home() {
       .then(() => Promise.all([getShowroomSettings(), getPendingSyncCounts(), getAuthCredentials()]))
       .then(([st, counts, creds]) => {
         if (isMounted) {
+          clearTimeout(safetyTimer);
           setSettings(st);
           setPendingCounts(counts);
           if (creds && creds.email) {
@@ -88,26 +97,97 @@ export default function Home() {
       })
       .catch((err) => {
         console.error('Failed to load initial DB state:', err);
-        if (isMounted) setIsInitializing(false);
+        if (isMounted) {
+          clearTimeout(safetyTimer);
+          setIsInitializing(false);
+        }
       });
 
     return () => {
       isMounted = false;
+      clearTimeout(safetyTimer);
     };
   }, []);
+
+  // Automatic synchronization whenever internet connection is restored or periodically
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let isSubscribed = true;
+
+    const performBackgroundSync = async () => {
+      if (typeof window === 'undefined' || !navigator.onLine) return;
+      try {
+        const res = await syncAllDataWithFirebase();
+        if (isSubscribed) {
+          await refreshState();
+          if (
+            res.syncedCounts.inventory > 0 ||
+            res.syncedCounts.sales > 0 ||
+            res.syncedCounts.customers > 0 ||
+            res.syncedCounts.expenses > 0
+          ) {
+            setDataVersion((prev) => prev + 1);
+          }
+        }
+      } catch (err) {
+        console.warn('[Auto-Sync] Background sync note:', err);
+      }
+    };
+
+    // Run once when authenticated & online
+    performBackgroundSync();
+
+    const handleOnline = () => {
+      console.log('[Auto-Sync] Device online. Uploading pending records to Firebase...');
+      performBackgroundSync();
+    };
+
+    window.addEventListener('online', handleOnline);
+
+    // Periodic auto-sync every 35 seconds to ensure continuous live cloud backup
+    const intervalId = setInterval(performBackgroundSync, 35000);
+
+    return () => {
+      isSubscribed = false;
+      window.removeEventListener('online', handleOnline);
+      clearInterval(intervalId);
+    };
+  }, [isAuthenticated, refreshState]);
 
   const handleSaleComplete = (sale: SaleRecord) => {
     setSelectedSaleForInvoice(sale);
     refreshState();
   };
 
-  const handleLoginSuccess = () => {
+  const handleLoginSuccess = async () => {
     const session = getStoredSessionUser();
     if (session) {
       setCurrentUserEmail(session.email);
     }
     setIsAuthenticated(true);
-    refreshState();
+
+    // 1. Immediately refresh local state and bump data version so cached data displays instantly
+    await refreshState();
+    setDataVersion((prev) => prev + 1);
+
+    // 2. If online, immediately pull remote records and upload local data to Firebase
+    if (typeof window !== 'undefined' && navigator.onLine) {
+      try {
+        const res = await syncAllDataWithFirebase();
+        await refreshState();
+        if (
+          res.syncedCounts.inventory > 0 ||
+          res.syncedCounts.sales > 0 ||
+          res.syncedCounts.customers > 0 ||
+          res.syncedCounts.expenses > 0
+        ) {
+          setDataVersion((prev) => prev + 1);
+        }
+      } catch (err) {
+        console.warn('[Login Sync] Initial cloud fetch note:', err);
+      }
+    }
   };
 
   const handleLogout = () => {

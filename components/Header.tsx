@@ -14,9 +14,14 @@ import {
   Settings,
   LogOut,
   User,
+  Cloud,
+  CloudUpload,
+  RefreshCw,
+  Check,
 } from 'lucide-react';
 import { PendingSyncCounts } from '@/types';
 import { logoutUser } from '@/lib/authService';
+import { syncAllDataWithFirebase } from '@/lib/syncEngine';
 
 interface HeaderProps {
   activeTab: string;
@@ -41,6 +46,7 @@ export const Header: React.FC<HeaderProps> = ({
     if (typeof window !== 'undefined') return navigator.onLine;
     return true;
   });
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -54,6 +60,19 @@ export const Header: React.FC<HeaderProps> = ({
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
+
+  const handleQuickSync = async () => {
+    if (isSyncing || !isOnline) return;
+    setIsSyncing(true);
+    try {
+      await syncAllDataWithFirebase({ forceUploadAll: true });
+      onSyncComplete();
+    } catch (err) {
+      console.warn('Quick sync error:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const handleLogoutClick = async () => {
     await logoutUser();
@@ -124,6 +143,40 @@ export const Header: React.FC<HeaderProps> = ({
                 </span>
               )}
             </div>
+
+            {/* Cloud Sync Status & Quick Trigger Button */}
+            {isOnline && (
+              <button
+                onClick={handleQuickSync}
+                disabled={isSyncing}
+                title="Click to sync all local data to Firebase Cloud"
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
+                  isSyncing
+                    ? 'bg-blue-950/70 text-blue-300 border-blue-800 animate-pulse'
+                    : pendingCounts.total > 0
+                    ? 'bg-amber-950/80 text-amber-300 border-amber-700 hover:bg-amber-900/90'
+                    : 'bg-slate-900/90 text-slate-300 border-slate-700 hover:border-slate-600 hover:text-white'
+                }`}
+              >
+                {isSyncing ? (
+                  <>
+                    <RefreshCw className="w-3 h-3 animate-spin text-blue-400" />
+                    <span>Syncing...</span>
+                  </>
+                ) : pendingCounts.total > 0 ? (
+                  <>
+                    <CloudUpload className="w-3 h-3 text-amber-400" />
+                    <span>{pendingCounts.total} to Sync</span>
+                  </>
+                ) : (
+                  <>
+                    <Cloud className="w-3 h-3 text-emerald-400" />
+                    <span className="hidden sm:inline">Firebase Synced</span>
+                    <span className="sm:hidden">Synced</span>
+                  </>
+                )}
+              </button>
+            )}
 
             {/* User Badge & Logout */}
             <div className="hidden lg:flex items-center gap-2 bg-slate-950 border border-slate-800 px-2.5 py-1 rounded-xl text-xs">

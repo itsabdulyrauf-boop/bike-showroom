@@ -13,35 +13,36 @@ import firebaseConfigJson from '../firebase-applet-config.json';
 // Construct config using JSON config first, falling back to environment variables
 export const firebaseConfig = {
   projectId:
-    firebaseConfigJson?.projectId ||
     process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ||
+    firebaseConfigJson?.projectId ||
     '',
   appId:
-    firebaseConfigJson?.appId ||
     process.env.NEXT_PUBLIC_FIREBASE_APP_ID ||
+    firebaseConfigJson?.appId ||
     '',
   apiKey:
-    firebaseConfigJson?.apiKey ||
     process.env.NEXT_PUBLIC_FIREBASE_API_KEY ||
+    firebaseConfigJson?.apiKey ||
     '',
   authDomain:
-    firebaseConfigJson?.authDomain ||
     process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ||
+    firebaseConfigJson?.authDomain ||
     '',
   firestoreDatabaseId:
+    process.env.NEXT_PUBLIC_FIREBASE_FIRESTORE_DATABASE_ID ||
     (firebaseConfigJson as any)?.databaseId ||
     firebaseConfigJson?.firestoreDatabaseId ||
-    process.env.NEXT_PUBLIC_FIREBASE_FIRESTORE_DATABASE_ID ||
-    '',
+    '(default)',
   storageBucket:
-    firebaseConfigJson?.storageBucket ||
     process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ||
+    firebaseConfigJson?.storageBucket ||
     '',
   messagingSenderId:
-    firebaseConfigJson?.messagingSenderId ||
     process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ||
+    firebaseConfigJson?.messagingSenderId ||
     '',
   measurementId:
+    process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID ||
     firebaseConfigJson?.measurementId ||
     '',
 };
