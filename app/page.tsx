@@ -15,6 +15,7 @@ import { SaleRecord, ShowroomSettings, PendingSyncCounts } from '@/types';
 import { seedInitialDataIfEmpty, getShowroomSettings, getPendingSyncCounts } from '@/lib/db';
 import { getStoredSessionUser, getAuthCredentials } from '@/lib/authService';
 import { INITIAL_SHOWROOM_SETTINGS } from '@/lib/sampleData';
+import { getFirebaseAnalytics } from '@/lib/firebase';
 
 export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -69,6 +70,9 @@ export default function Home() {
 
   useEffect(() => {
     let isMounted = true;
+
+    // Initialize Firebase Analytics on client
+    getFirebaseAnalytics().catch(() => {});
 
     seedInitialDataIfEmpty()
       .then(() => Promise.all([getShowroomSettings(), getPendingSyncCounts(), getAuthCredentials()]))

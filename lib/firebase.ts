@@ -1,5 +1,6 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getFirestore, Firestore, doc, setDoc, getDocFromServer } from 'firebase/firestore';
+import { getAnalytics, isSupported, Analytics } from 'firebase/analytics';
 import firebaseConfigJson from '../firebase-applet-config.json';
 
 // Construct config using JSON config first, falling back to environment variables
@@ -74,6 +75,24 @@ export function getFirebaseApp(): FirebaseApp | null {
       }
     }
     console.error('Error initializing Firebase App:', err);
+    return null;
+  }
+}
+
+let analytics: Analytics | null = null;
+
+export async function getFirebaseAnalytics(): Promise<Analytics | null> {
+  if (typeof window === 'undefined') return null;
+  const app = getFirebaseApp();
+  if (!app) return null;
+  try {
+    const supported = await isSupported();
+    if (supported && !analytics) {
+      analytics = getAnalytics(app);
+    }
+    return analytics;
+  } catch (err) {
+    console.warn('Firebase Analytics not supported in this environment:', err);
     return null;
   }
 }
