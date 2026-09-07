@@ -16,6 +16,7 @@ import {
   getAllInventory,
   getAllCustomers,
   saveSaleRecord,
+  saveInventoryItem,
 } from '@/lib/db';
 import {
   ShoppingBag,
@@ -33,6 +34,7 @@ import {
   CreditCard,
   UserPlus,
   Loader2,
+  Pencil,
 } from 'lucide-react';
 
 interface QuickPOSProps {
@@ -95,6 +97,7 @@ export const QuickPOS: React.FC<QuickPOSProps> = ({ onSaleComplete, settings }) 
   const [registrationStatus, setRegistrationStatus] =
     useState<RegistrationStatus>('Showroom Registration');
   const [saleNotes, setSaleNotes] = useState<string>('');
+  const [syncPriceWithInventory, setSyncPriceWithInventory] = useState<boolean>(true);
 
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -247,6 +250,30 @@ export const QuickPOS: React.FC<QuickPOSProps> = ({ onSaleComplete, settings }) 
     }
   };
 
+  // Update item price directly in cart (for items with missing or custom selling price)
+  const handleUpdateCartItemPrice = (index: number, newPrice: number) => {
+    const safePrice = Math.max(0, isNaN(newPrice) ? 0 : newPrice);
+    const updated = [...cartItems];
+    const oldPrice = updated[index]?.pricePKR || 0;
+    
+    updated[index] = {
+      ...updated[index],
+      pricePKR: safePrice,
+    };
+    setCartItems(updated);
+
+    // Auto-adjust paid amount if it was matching previous total or was 0
+    const oldSubtotal = cartItems.reduce((acc, ci) => acc + ci.pricePKR * ci.quantity, 0);
+    const oldTotal = Math.max(0, oldSubtotal - discountPKR + taxPKR);
+    const newSubtotal = updated.reduce((acc, ci) => acc + ci.pricePKR * ci.quantity, 0);
+    const newTotal = Math.max(0, newSubtotal - discountPKR + taxPKR);
+
+    if (paidAmountPKR === 0 || paidAmountPKR === oldTotal) {
+      setPaidAmountPKR(newTotal);
+    }
+    setFormError(null);
+  };
+
   // Computations
   const subtotalPKR = cartItems.reduce((acc, item) => acc + item.pricePKR * item.quantity, 0);
   const totalPKR = Math.max(0, subtotalPKR - discountPKR + taxPKR);
@@ -258,6 +285,13 @@ export const QuickPOS: React.FC<QuickPOSProps> = ({ onSaleComplete, settings }) 
 
     if (cartItems.length === 0) {
       setFormError('Please add at least one motorcycle to checkout.');
+      return;
+    }
+
+    // Validation: Check if any item has 0 or empty selling price
+    const unpricedItem = cartItems.find((ci) => !ci.pricePKR || ci.pricePKR <= 0);
+    if (unpricedItem) {
+      setFormError(`Please enter a valid selling rate (PKR) for "${unpricedItem.make} ${unpricedItem.model}" in the checkout order list before generating invoice.`);
       return;
     }
 
@@ -325,6 +359,27 @@ export const QuickPOS: React.FC<QuickPOSProps> = ({ onSaleComplete, settings }) 
         createdAt: new Date().toISOString(),
         syncStatus: 'pending',
       };
+
+      // If user enabled updating price in inventory, update the inventory item records
+      if (syncPriceWithInventory) {
+        for (const cItem of cartItems) {
+          if (cItem.bikeId && cItem.pricePKR > 0) {
+            const invMatch = inventory.find((inv) => inv.id === cItem.bikeId);
+            if (invMatch && invMatch.sellingPricePKR !== cItem.pricePKR) {
+              try {
+                await saveInventoryItem({
+                  ...invMatch,
+                  sellingPricePKR: cItem.pricePKR,
+                  updatedAt: new Date().toISOString(),
+                  syncStatus: 'pending',
+                });
+              } catch (e) {
+                console.warn('Could not update inventory rate:', e);
+              }
+            }
+          }
+        }
+      }
 
       // Save to IndexedDB (offline-first!)
       await saveSaleRecord(newSale);
@@ -622,9 +677,20 @@ export const QuickPOS: React.FC<QuickPOSProps> = ({ onSaleComplete, settings }) 
                         </div>
 
                         <div className="flex items-center justify-between pt-2 border-t border-slate-800/60">
-                          <span className="font-mono font-bold text-emerald-400 text-sm">
-                            {formatPKR(item.sellingPricePKR)}
-                          </span>
+                          {item.sellingPricePKR > 0 ? (
+                            <span className="font-mono font-bold text-emerald-400 text-sm">
+                              {formatPKR(item.sellingPricePKR)}
+                            </span>
+                          ) : (
+                            <div className="flex flex-col">
+                              <span className="font-mono font-bold text-amber-400 text-xs">
+                                Rs. 0
+                              </span>
+                              <span className="text-[10px] text-amber-300/80 font-medium">
+                                (Set price on Add)
+                              </span>
+                            </div>
+                          )}
                           <button
                             type="button"
                             onClick={() => handleAddInventoryToCart(item)}
@@ -839,48 +905,83 @@ export const QuickPOS: React.FC<QuickPOSProps> = ({ onSaleComplete, settings }) 
             </h3>
 
             {/* Selected Items List */}
-            <div className="space-y-2 mb-4 max-h-48 overflow-y-auto pr-1 scrollbar-thin">
+            <div className="space-y-2 mb-3 max-h-64 overflow-y-auto pr-1 scrollbar-thin">
               {cartItems.length > 0 ? (
                 cartItems.map((item, idx) => (
                   <div
                     key={idx}
-                    className="p-3 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between gap-3 text-xs"
+                    className="p-3 bg-slate-950 border border-slate-800 rounded-xl flex flex-col gap-2.5 text-xs transition-all hover:border-slate-700"
                   >
-                    <div>
-                      <div className="flex items-center gap-1.5 mb-0.5">
-                        <span className="font-bold text-white block">
-                          {item.make} {item.model}
-                        </span>
-                        {item.itemType && (
-                          <span
-                            className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase tracking-wider ${
-                              item.itemType === 'Used Bike'
-                                ? 'bg-amber-950 text-amber-300 border border-amber-800'
-                                : item.itemType === 'Rickshaw Body'
-                                ? 'bg-cyan-950 text-cyan-300 border border-cyan-800'
-                                : item.itemType === 'Auto Rickshaw'
-                                ? 'bg-purple-950 text-purple-300 border border-purple-800'
-                                : 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                            }`}
-                          >
-                            {item.itemType}
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span className="font-bold text-white block text-sm">
+                            {item.make} {item.model}
                           </span>
-                        )}
+                          {item.itemType && (
+                            <span
+                              className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase tracking-wider ${
+                                item.itemType === 'Used Bike'
+                                  ? 'bg-amber-950 text-amber-300 border border-amber-800'
+                                  : item.itemType === 'Rickshaw Body'
+                                  ? 'bg-cyan-950 text-cyan-300 border border-cyan-800'
+                                  : item.itemType === 'Auto Rickshaw'
+                                  ? 'bg-purple-950 text-purple-300 border border-purple-800'
+                                  : 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                              }`}
+                            >
+                              {item.itemType}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-slate-400 font-mono text-[11px] block">
+                          Chassis / Frame: {item.chassisNumber} {item.engineNumber && item.engineNumber !== 'N/A' ? `• Eng: ${item.engineNumber}` : ''}
+                        </span>
                       </div>
-                      <span className="text-slate-400 font-mono text-[11px] block">
-                        Chassis / Frame: {item.chassisNumber} {item.engineNumber && item.engineNumber !== 'N/A' ? `• Eng: ${item.engineNumber}` : ''}
-                      </span>
-                      <span className="text-emerald-400 font-mono font-bold">
-                        {formatPKR(item.pricePKR)}
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveFromCart(idx)}
+                        title="Remove from checkout list"
+                        className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 rounded-lg transition-all shrink-0"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveFromCart(idx)}
-                      className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 rounded-lg transition-all"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+
+                    {/* Selling Rate Input & Edit Option */}
+                    <div className="pt-2 border-t border-slate-900 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <label className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
+                          <Pencil className="w-3 h-3 text-indigo-400" />
+                          <span>Selling Price (PKR):</span>
+                        </label>
+                        <div className="relative flex items-center">
+                          <span className="absolute left-2 text-slate-500 font-mono text-[11px]">Rs.</span>
+                          <input
+                            type="number"
+                            min="0"
+                            value={item.pricePKR === 0 ? '' : item.pricePKR}
+                            onChange={(e) => handleUpdateCartItemPrice(idx, Number(e.target.value))}
+                            placeholder="0"
+                            className={`w-32 bg-slate-900 border rounded-lg pl-8 pr-2.5 py-1 text-xs font-mono font-bold text-emerald-400 focus:outline-none transition-all ${
+                              item.pricePKR === 0
+                                ? 'border-amber-500/80 bg-amber-950/30 text-amber-300 ring-1 ring-amber-500 animate-pulse'
+                                : 'border-slate-700 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500'
+                            }`}
+                          />
+                        </div>
+                      </div>
+
+                      {item.pricePKR === 0 ? (
+                        <span className="text-[10px] bg-amber-950/90 text-amber-300 border border-amber-800/80 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3 text-amber-400" /> Price Required
+                        </span>
+                      ) : (
+                        <span className="text-xs font-mono font-bold text-emerald-400">
+                          {formatPKR(item.pricePKR)}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 ))
               ) : (
@@ -889,6 +990,30 @@ export const QuickPOS: React.FC<QuickPOSProps> = ({ onSaleComplete, settings }) 
                 </div>
               )}
             </div>
+
+            {/* Inventory Sync Option & Zero Price Warning */}
+            {cartItems.length > 0 && (
+              <div className="space-y-2 mb-3">
+                {cartItems.some((ci) => ci.bikeId) && (
+                  <label className="flex items-center gap-2 text-[11px] text-slate-300 bg-slate-950/80 border border-slate-800 px-3 py-2 rounded-xl cursor-pointer hover:bg-slate-900 transition-all select-none">
+                    <input
+                      type="checkbox"
+                      checked={syncPriceWithInventory}
+                      onChange={(e) => setSyncPriceWithInventory(e.target.checked)}
+                      className="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
+                    />
+                    <span>Also update entered selling rates into Showroom Inventory stock</span>
+                  </label>
+                )}
+
+                {cartItems.some((ci) => !ci.pricePKR || ci.pricePKR <= 0) && (
+                  <div className="p-2.5 bg-amber-950/40 border border-amber-800/80 rounded-xl text-amber-300 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
+                    <span>One or more items have Rs. 0 rate. Please type selling price in the list above.</span>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Financial Calculations Form */}
             <div className="space-y-3 bg-slate-950 p-4 rounded-xl border border-slate-800 text-xs">

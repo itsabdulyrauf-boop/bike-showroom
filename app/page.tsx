@@ -262,6 +262,10 @@ export default function Home() {
         sale={selectedSaleForInvoice}
         settings={settings}
         onClose={() => setSelectedSaleForInvoice(null)}
+        onInvoiceUpdated={() => {
+          setDataVersion((prev) => prev + 1);
+          refreshState();
+        }}
       />
     </div>
   );

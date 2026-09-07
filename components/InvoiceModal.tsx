@@ -1,24 +1,48 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { SaleRecord, ShowroomSettings } from '@/types';
 import { formatPKR, numberToWordsPKR } from '@/lib/currency';
-import { Printer, X, CheckCircle, Shield, FileText, Bike, Phone, MapPin, Building2 } from 'lucide-react';
+import { EditInvoiceModal } from '@/components/EditInvoiceModal';
+import {
+  Printer,
+  X,
+  CheckCircle,
+  Shield,
+  FileText,
+  Bike,
+  Phone,
+  MapPin,
+  Building2,
+  Pencil,
+} from 'lucide-react';
 
 interface InvoiceModalProps {
   sale: SaleRecord | null;
   settings: ShowroomSettings;
   onClose: () => void;
+  onInvoiceUpdated?: (updatedSale: SaleRecord) => void;
 }
 
-export const InvoiceModal: React.FC<InvoiceModalProps> = ({ sale, settings, onClose }) => {
-  if (!sale) return null;
+export const InvoiceModal: React.FC<InvoiceModalProps> = ({
+  sale,
+  settings,
+  onClose,
+  onInvoiceUpdated,
+}) => {
+  const [editedSale, setEditedSale] = useState<SaleRecord | null>(null);
+  const [isEditOpen, setIsEditOpen] = useState<boolean>(false);
+
+  const currentSale =
+    editedSale && sale && editedSale.id === sale.id ? editedSale : sale;
+
+  if (!currentSale) return null;
 
   const handlePrint = () => {
     window.print();
   };
 
-  const formattedDate = new Date(sale.createdAt).toLocaleDateString('en-PK', {
+  const formattedDate = new Date(currentSale.createdAt).toLocaleDateString('en-PK', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
@@ -38,10 +62,18 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ sale, settings, onCl
             </div>
             <div>
               <h3 className="font-bold text-white text-base">Sales Invoice Generated</h3>
-              <p className="text-xs text-slate-400">Invoice #{sale.invoiceNumber} • PKR Currency</p>
+              <p className="text-xs text-slate-400">Invoice #{currentSale.invoiceNumber} • PKR Currency</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsEditOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-750 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-600 rounded-lg text-sm font-semibold transition-all"
+              title="Edit Invoice Details & Pricing"
+            >
+              <Pencil className="w-4 h-4 text-indigo-400" />
+              <span>Edit Invoice</span>
+            </button>
             <button
               onClick={handlePrint}
               className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-semibold transition-all shadow-lg shadow-indigo-600/30"
@@ -97,19 +129,19 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ sale, settings, onCl
                   OFFICIAL SALES RECEIPT
                 </span>
                 <span className="text-xl font-extrabold text-slate-900 font-mono block my-1">
-                  #{sale.invoiceNumber}
+                  #{currentSale.invoiceNumber}
                 </span>
                 <span className="text-xs text-slate-600 block">{formattedDate}</span>
                 <span
                   className={`inline-block mt-2 px-2.5 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider ${
-                    sale.paymentStatus === 'Paid'
+                    currentSale.paymentStatus === 'Paid'
                       ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                      : sale.paymentStatus === 'Partial'
+                      : currentSale.paymentStatus === 'Partial'
                       ? 'bg-amber-100 text-amber-800 border border-amber-300'
                       : 'bg-rose-100 text-rose-800 border border-rose-300'
                   }`}
                 >
-                  STATUS: {sale.paymentStatus}
+                  STATUS: {currentSale.paymentStatus}
                 </span>
               </div>
             </div>
@@ -123,23 +155,23 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ sale, settings, onCl
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
               <div>
                 <span className="text-slate-500 text-xs block">Customer Full Name:</span>
-                <span className="font-bold text-slate-900 text-base">{sale.customerName}</span>
+                <span className="font-bold text-slate-900 text-base">{currentSale.customerName}</span>
               </div>
               <div>
                 <span className="text-slate-500 text-xs block">National ID / CNIC #:</span>
                 <span className="font-mono font-bold text-slate-900">
-                  {sale.customerCnic || 'N/A'}
+                  {currentSale.customerCnic || 'N/A'}
                 </span>
               </div>
               <div>
                 <span className="text-slate-500 text-xs block">Mobile Phone #:</span>
                 <span className="font-mono font-bold text-slate-900">
-                  {sale.customerPhone || 'N/A'}
+                  {currentSale.customerPhone || 'N/A'}
                 </span>
               </div>
               <div>
                 <span className="text-slate-500 text-xs block">Residential / Business Address:</span>
-                <span className="text-slate-800">{sale.customerAddress || 'Karachi, Pakistan'}</span>
+                <span className="text-slate-800">{currentSale.customerAddress || 'Karachi, Pakistan'}</span>
               </div>
             </div>
           </div>
@@ -161,7 +193,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ sale, settings, onCl
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {sale.items.map((item, idx) => (
+                  {currentSale.items.map((item, idx) => (
                     <tr key={idx} className="hover:bg-slate-50">
                       <td className="p-3 font-semibold text-slate-900">
                         <div className="flex items-center gap-1.5 flex-wrap">
@@ -205,7 +237,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ sale, settings, onCl
               <div>
                 <span className="font-bold text-indigo-950 block">Showroom Warranty:</span>
                 <span className="text-indigo-800">
-                  {sale.warrantyMonths ? `${sale.warrantyMonths} Months Manufacturer Warranty` : 'Standard Showroom Policy'}
+                  {currentSale.warrantyMonths ? `${currentSale.warrantyMonths} Months Manufacturer Warranty` : 'Standard Showroom Policy'}
                 </span>
               </div>
             </div>
@@ -213,7 +245,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ sale, settings, onCl
               <FileText className="w-5 h-5 text-slate-600 shrink-0" />
               <div>
                 <span className="font-bold text-slate-950 block">Registration Option:</span>
-                <span className="text-slate-700">{sale.registrationStatus}</span>
+                <span className="text-slate-700">{currentSale.registrationStatus}</span>
               </div>
             </div>
           </div>
@@ -225,25 +257,25 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ sale, settings, onCl
                 AMOUNT IN WORDS (PKR):
               </span>
               <p className="text-xs italic font-semibold text-slate-800 bg-amber-50 border border-amber-200 p-2.5 rounded-lg">
-                &quot;{numberToWordsPKR(sale.totalPKR)}&quot;
+                &quot;{numberToWordsPKR(currentSale.totalPKR)}&quot;
               </p>
               <div className="mt-3 text-xs text-slate-600 space-y-1">
                 <p>
                   <span className="font-semibold text-slate-800">Payment Mode:</span>{' '}
-                  {sale.paymentMethod}
+                  {currentSale.paymentMethod}
                 </p>
-                {sale.accountNumber && (
+                {currentSale.accountNumber && (
                   <p>
                     <span className="font-semibold text-slate-800">Account No:</span>{' '}
                     <span className="font-mono font-bold text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-300">
-                      {sale.accountNumber}
+                      {currentSale.accountNumber}
                     </span>
                   </p>
                 )}
-                {sale.notes && (
+                {currentSale.notes && (
                   <p>
                     <span className="font-semibold text-slate-800">Notes / References:</span>{' '}
-                    {sale.notes}
+                    {currentSale.notes}
                   </p>
                 )}
               </div>
@@ -253,32 +285,32 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ sale, settings, onCl
             <div className="bg-slate-900 text-white rounded-xl p-4 font-mono space-y-2 text-sm">
               <div className="flex justify-between text-xs text-slate-300">
                 <span>Subtotal Rate:</span>
-                <span>{formatPKR(sale.subtotalPKR)}</span>
+                <span>{formatPKR(currentSale.subtotalPKR)}</span>
               </div>
-              {sale.discountPKR > 0 && (
+              {currentSale.discountPKR > 0 && (
                 <div className="flex justify-between text-xs text-emerald-400">
                   <span>Trade Discount:</span>
-                  <span>- {formatPKR(sale.discountPKR)}</span>
+                  <span>- {formatPKR(currentSale.discountPKR)}</span>
                 </div>
               )}
-              {sale.taxPKR > 0 && (
+              {currentSale.taxPKR > 0 && (
                 <div className="flex justify-between text-xs text-slate-300">
                   <span>Tax / Reg Fee:</span>
-                  <span>+ {formatPKR(sale.taxPKR)}</span>
+                  <span>+ {formatPKR(currentSale.taxPKR)}</span>
                 </div>
               )}
               <div className="border-t border-slate-700 pt-2 flex justify-between font-bold text-base text-white">
                 <span>Grand Total:</span>
-                <span className="text-indigo-300 text-lg">{formatPKR(sale.totalPKR)}</span>
+                <span className="text-indigo-300 text-lg">{formatPKR(currentSale.totalPKR)}</span>
               </div>
               <div className="flex justify-between text-xs text-slate-300 pt-1 border-t border-slate-800">
                 <span>Amount Paid:</span>
-                <span className="text-emerald-400 font-bold">{formatPKR(sale.paidAmountPKR)}</span>
+                <span className="text-emerald-400 font-bold">{formatPKR(currentSale.paidAmountPKR)}</span>
               </div>
               <div className="flex justify-between text-xs text-slate-300">
                 <span>Remaining Balance:</span>
-                <span className={sale.balancePKR > 0 ? 'text-rose-400 font-bold' : 'text-slate-400'}>
-                  {formatPKR(sale.balancePKR)}
+                <span className={currentSale.balancePKR > 0 ? 'text-rose-400 font-bold' : 'text-slate-400'}>
+                  {formatPKR(currentSale.balancePKR)}
                 </span>
               </div>
             </div>
@@ -306,6 +338,18 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ sale, settings, onCl
 
         </div>
       </div>
+
+      {/* Edit Invoice Sub-modal */}
+      <EditInvoiceModal
+        sale={currentSale}
+        isOpen={isEditOpen}
+        onClose={() => setIsEditOpen(false)}
+        onSaveSuccess={(updatedSale) => {
+          setEditedSale(updatedSale);
+          setIsEditOpen(false);
+          onInvoiceUpdated?.(updatedSale);
+        }}
+      />
     </div>
   );
 };

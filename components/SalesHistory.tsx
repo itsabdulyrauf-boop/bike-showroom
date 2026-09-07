@@ -3,8 +3,9 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { SaleRecord } from '@/types';
 import { formatPKR } from '@/lib/currency';
-import { getAllSales, deleteSaleRecord } from '@/lib/db';
+import { getAllSales } from '@/lib/db';
 import { Pagination } from '@/components/Pagination';
+import { EditInvoiceModal } from '@/components/EditInvoiceModal';
 import {
   Receipt,
   Search,
@@ -21,8 +22,7 @@ import {
   X,
   CreditCard,
   AlertCircle,
-  Trash2,
-  RotateCcw,
+  Pencil,
 } from 'lucide-react';
 
 interface SalesHistoryProps {
@@ -39,9 +39,7 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ onSelectSale }) => {
   // Pagination State
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
-  const [saleToDelete, setSaleToDelete] = useState<SaleRecord | null>(null);
-  const [restoreStockOnDelete, setRestoreStockOnDelete] = useState<boolean>(true);
-  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [saleToEdit, setSaleToEdit] = useState<SaleRecord | null>(null);
 
   const loadSales = useCallback(() => {
     getAllSales()
@@ -58,20 +56,6 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ onSelectSale }) => {
   useEffect(() => {
     loadSales();
   }, [loadSales]);
-
-  const handleDeleteConfirm = async () => {
-    if (!saleToDelete) return;
-    setIsDeleting(true);
-    try {
-      await deleteSaleRecord(saleToDelete.id, restoreStockOnDelete);
-      setSaleToDelete(null);
-      loadSales();
-    } catch (err) {
-      console.error('Failed to delete sale:', err);
-    } finally {
-      setIsDeleting(false);
-    }
-  };
 
   // Compute available unique months from sales data
   const availableMonths = useMemo(() => {
@@ -600,11 +584,12 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ onSelectSale }) => {
                           <span className="hidden sm:inline">Print</span>
                         </button>
                         <button
-                          onClick={() => setSaleToDelete(sale)}
-                          className="p-1.5 bg-slate-800 hover:bg-rose-950/80 hover:text-rose-400 text-slate-400 border border-slate-700 hover:border-rose-800 rounded-lg text-xs transition-all"
-                          title="Delete / Cancel Invoice"
+                          onClick={() => setSaleToEdit(sale)}
+                          className="px-2.5 py-1.5 bg-slate-800 hover:bg-indigo-900/60 text-slate-300 hover:text-indigo-200 border border-slate-700 hover:border-indigo-600 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
+                          title="Edit Sales Invoice Details & Pricing"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Pencil className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>Edit</span>
                         </button>
                       </div>
                     </td>
@@ -654,80 +639,18 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ onSelectSale }) => {
         />
       </div>
 
-      {/* Delete Confirmation Modal */}
-      {saleToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl animate-in fade-in zoom-in-95">
-            <div className="flex items-center gap-3 text-rose-400 mb-4">
-              <div className="p-2.5 bg-rose-950/80 border border-rose-800 rounded-xl">
-                <AlertCircle className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-white">Delete Invoice #{saleToDelete.invoiceNumber}</h3>
-                <p className="text-xs text-slate-400">This will remove the sale record from Database & Cloud.</p>
-              </div>
-            </div>
-
-            <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 text-xs space-y-1 mb-4">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Customer:</span>
-                <span className="font-bold text-white">{saleToDelete.customerName}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Total Amount:</span>
-                <span className="font-mono font-bold text-emerald-400">{formatPKR(saleToDelete.totalPKR)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Items:</span>
-                <span className="text-indigo-300">
-                  {saleToDelete.items.map((it) => `${it.make} ${it.model}`).join(', ')}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 mb-6 bg-indigo-950/40 border border-indigo-900/50 p-3 rounded-xl">
-              <input
-                type="checkbox"
-                id="restoreStock"
-                checked={restoreStockOnDelete}
-                onChange={(e) => setRestoreStockOnDelete(e.target.checked)}
-                className="w-4 h-4 rounded text-indigo-600 bg-slate-800 border-slate-700 focus:ring-indigo-500"
-              />
-              <label htmlFor="restoreStock" className="text-xs text-slate-200 cursor-pointer select-none">
-                <span className="font-bold block text-indigo-300">Restore Inventory Stock & Status</span>
-                <span className="text-[11px] text-slate-400">Make the vehicle(s) Available in inventory again</span>
-              </label>
-            </div>
-
-            <div className="flex items-center justify-end gap-2.5">
-              <button
-                onClick={() => setSaleToDelete(null)}
-                disabled={isDeleting}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDeleteConfirm}
-                disabled={isDeleting}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold rounded-xl shadow-lg shadow-rose-600/25 flex items-center gap-1.5 transition-colors disabled:opacity-50"
-              >
-                {isDeleting ? (
-                  <>
-                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Deleting...</span>
-                  </>
-                ) : (
-                  <>
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Confirm Delete</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Edit Invoice Modal */}
+      <EditInvoiceModal
+        sale={saleToEdit}
+        isOpen={!!saleToEdit}
+        onClose={() => setSaleToEdit(null)}
+        onSaveSuccess={(updatedSale) => {
+          setSales((prev) =>
+            prev.map((s) => (s.id === updatedSale.id ? updatedSale : s))
+          );
+          setSaleToEdit(null);
+        }}
+      />
     </div>
   );
 };
