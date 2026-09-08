@@ -190,42 +190,68 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                     <th className="p-3">Engine Number</th>
                     <th className="p-3 text-center">Color / Year</th>
                     <th className="p-3 text-right">Rate (PKR)</th>
+                    <th className="p-3 text-right bg-slate-850 text-emerald-400">Paid Amount (PKR)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {currentSale.items.map((item, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50">
-                      <td className="p-3 font-semibold text-slate-900">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span>{item.make} {item.model}</span>
-                          {item.itemType && (
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-300">
-                              {item.itemType}
+                  {currentSale.items.map((item, idx) => {
+                    const itemPaid =
+                      currentSale.items.length === 1
+                        ? currentSale.paidAmountPKR
+                        : currentSale.subtotalPKR > 0
+                        ? Math.round((item.pricePKR / currentSale.subtotalPKR) * currentSale.paidAmountPKR)
+                        : 0;
+
+                    return (
+                      <tr key={idx} className="hover:bg-slate-50">
+                        <td className="p-3 font-semibold text-slate-900">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span>{item.make} {item.model}</span>
+                            {item.itemType && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-300">
+                                {item.itemType}
+                              </span>
+                            )}
+                          </div>
+                          {item.variant && (
+                            <span className="block text-xs font-normal text-slate-600 mt-0.5">
+                              {item.variant}
                             </span>
                           )}
-                        </div>
-                        {item.variant && (
-                          <span className="block text-xs font-normal text-slate-600 mt-0.5">
-                            {item.variant}
-                          </span>
-                        )}
-                      </td>
-                      <td className="p-3 font-mono font-bold text-indigo-900 bg-indigo-50/50">
-                        {item.chassisNumber || 'N/A'}
-                      </td>
-                      <td className="p-3 font-mono font-bold text-slate-800">
-                        {item.engineNumber || 'N/A'}
-                      </td>
-                      <td className="p-3 text-center">
-                        <span className="font-medium text-slate-800">{item.color || 'Std'}</span>
-                        <span className="text-slate-500 text-xs block">Model {item.year}</span>
-                      </td>
-                      <td className="p-3 text-right font-mono font-bold text-slate-900">
-                        {formatPKR(item.pricePKR)}
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="p-3 font-mono font-bold text-indigo-900 bg-indigo-50/50">
+                          {item.chassisNumber || 'N/A'}
+                        </td>
+                        <td className="p-3 font-mono font-bold text-slate-800">
+                          {item.engineNumber || 'N/A'}
+                        </td>
+                        <td className="p-3 text-center">
+                          <span className="font-medium text-slate-800">{item.color || 'Std'}</span>
+                          <span className="text-slate-500 text-xs block">Model {item.year}</span>
+                        </td>
+                        <td className="p-3 text-right font-mono font-bold text-slate-900">
+                          {formatPKR(item.pricePKR)}
+                        </td>
+                        <td className="p-3 text-right font-mono font-bold text-emerald-700 bg-emerald-50/50">
+                          {formatPKR(itemPaid)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
+                <tfoot className="bg-slate-100 font-mono text-xs border-t-2 border-slate-300 font-bold text-slate-900">
+                  <tr>
+                    <td colSpan={4} className="p-3 text-right uppercase tracking-wider text-slate-600 font-sans">
+                      Total
+                    </td>
+                    <td className="p-3 text-right font-mono font-bold text-slate-900">
+                      {formatPKR(currentSale.subtotalPKR)}
+                    </td>
+                    <td className="p-3 text-right font-mono font-bold text-emerald-800 bg-emerald-100/60">
+                      {formatPKR(currentSale.paidAmountPKR)}
+                    </td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>
