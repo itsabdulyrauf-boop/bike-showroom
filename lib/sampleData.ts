@@ -1,4 +1,4 @@
-import { InventoryItem, CustomerItem, ExpenseRecord, ShowroomSettings } from '@/types';
+import { InventoryItem, CustomerItem, ExpenseRecord, ShowroomSettings, BrandItem } from '@/types';
 
 export const INITIAL_SHOWROOM_SETTINGS: ShowroomSettings = {
   id: 'showroom_main_settings',
@@ -15,9 +15,153 @@ export const INITIAL_SHOWROOM_SETTINGS: ShowroomSettings = {
   updatedAt: new Date().toISOString(),
 };
 
+export const INITIAL_BRANDS: BrandItem[] = [
+  {
+    id: 'brand_honda',
+    name: 'Honda',
+    country: 'Japan / Pakistan',
+    description: 'Atlas Honda Ltd - Leading Motorcycle Brand (CD 70, CG 125, CB 150F)',
+    status: 'Active',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    syncStatus: 'synced',
+  },
+  {
+    id: 'brand_yamaha',
+    name: 'Yamaha',
+    country: 'Japan / Pakistan',
+    description: 'Yamaha Motor Pakistan (YBR 125, YBR 125G, YB 125Z-DX)',
+    status: 'Active',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    syncStatus: 'synced',
+  },
+  {
+    id: 'brand_crown',
+    name: 'Crown',
+    country: 'Pakistan',
+    description: 'Crown Motor Co. - High-efficiency commuter bikes & auto rickshaws',
+    status: 'Active',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    syncStatus: 'synced',
+  },
+  {
+    id: 'brand_suzuki',
+    name: 'Suzuki',
+    country: 'Japan / Pakistan',
+    description: 'Pak Suzuki Motor Co (GD 110S, GS 150, GR 150)',
+    status: 'Active',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    syncStatus: 'synced',
+  },
+  {
+    id: 'brand_united',
+    name: 'United',
+    country: 'Pakistan',
+    description: 'United Auto Industries - US 70, US 100, US 125 & Rickshaws',
+    status: 'Active',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    syncStatus: 'synced',
+  },
+  {
+    id: 'brand_road_prince',
+    name: 'Road Prince',
+    country: 'Pakistan',
+    description: 'Road Prince Passion 70, Robinson 150 & Loaders',
+    status: 'Active',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    syncStatus: 'synced',
+  },
+  {
+    id: 'brand_super_power',
+    name: 'Super Power',
+    country: 'Pakistan',
+    description: 'Super Power SP 70, Leo 200, Sultan 250 & Scooters',
+    status: 'Active',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    syncStatus: 'synced',
+  },
+  {
+    id: 'brand_sazgar',
+    name: 'Sazgar',
+    country: 'Pakistan',
+    description: 'Sazgar Engineering - 4-Stroke CNG / Petrol Auto Rickshaws',
+    status: 'Active',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    syncStatus: 'synced',
+  },
+  {
+    id: 'brand_new_asia',
+    name: 'New Asia',
+    country: 'Pakistan',
+    description: 'New Asia Autos - 70cc/100cc Bikes, Rickshaws & Bodies',
+    status: 'Active',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    syncStatus: 'synced',
+  },
+  {
+    id: 'brand_qingqi',
+    name: 'Qingqi',
+    country: 'China / Pakistan',
+    description: 'Plum Qingqi Motors - 3-Wheelers & Passenger Rickshaws',
+    status: 'Active',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    syncStatus: 'synced',
+  },
+  {
+    id: 'brand_siwa',
+    name: 'Siwa',
+    country: 'Pakistan',
+    description: 'Siwa Rickshaw Bodies, Cabs & Chassis Assemblies',
+    status: 'Active',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    syncStatus: 'synced',
+  },
+  {
+    id: 'brand_unique',
+    name: 'Unique',
+    country: 'Pakistan',
+    description: 'Unique UD 70 & UD 100 series',
+    status: 'Active',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    syncStatus: 'synced',
+  },
+  {
+    id: 'brand_hi_speed',
+    name: 'Hi-Speed',
+    country: 'Pakistan',
+    description: 'Raazy Motor Industries - Hi-Speed Infinity 150 & SR 70',
+    status: 'Active',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    syncStatus: 'synced',
+  },
+  {
+    id: 'brand_kawasaki',
+    name: 'Kawasaki',
+    country: 'Japan',
+    description: 'Kawasaki Heavy Industries - Sports & Heavy Bikes',
+    status: 'Active',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    syncStatus: 'synced',
+  },
+];
+
 export const INITIAL_INVENTORY: InventoryItem[] = [];
 
 export const INITIAL_CUSTOMERS: CustomerItem[] = [];
 
 export const INITIAL_EXPENSES: ExpenseRecord[] = [];
+
 

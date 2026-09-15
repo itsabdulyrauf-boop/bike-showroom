@@ -69,6 +69,26 @@
       },
       "required": ["id", "name"]
     },
+    "stocks": {
+      "title": "Stock Batch Record",
+      "description": "Incoming stock shipments, batches and procurement lots",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "batchNumber": { "type": "string" },
+        "stockName": { "type": "string" },
+        "stockDate": { "type": "string" },
+        "status": { "type": "string" },
+        "totalQuantity": { "type": "number" },
+        "purchaseCostPKR": { "type": "number" },
+        "supplier": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "syncStatus": { "type": "string" }
+      },
+      "required": ["id", "batchNumber", "stockName", "stockDate", "totalQuantity", "purchaseCostPKR"]
+    },
     "settings": {
       "title": "Showroom & Auth Settings",
       "description": "Showroom branding parameters and login auth credentials",
@@ -81,6 +101,22 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["id"]
+    },
+    "brands": {
+      "title": "Motorcycle & Vehicle Brand",
+      "description": "Vehicle manufacturers, makers and brands with CRUD support",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "country": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "syncStatus": { "type": "string" }
+      },
+      "required": ["id", "name", "status"]
     }
   },
   "firestore": {
@@ -99,6 +135,14 @@
     "/customers/{customerId}": {
       "schema": { "$ref": "#/entities/customers" },
       "description": "Customer contact & history records"
+    },
+    "/stocks/{stockId}": {
+      "schema": { "$ref": "#/entities/stocks" },
+      "description": "Stock procurement shipments and batches"
+    },
+    "/brands/{brandId}": {
+      "schema": { "$ref": "#/entities/brands" },
+      "description": "Vehicle manufacturers and brands"
     },
     "/settings/{settingId}": {
       "schema": { "$ref": "#/entities/settings" },

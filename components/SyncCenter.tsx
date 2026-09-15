@@ -13,6 +13,7 @@ import {
   exportCustomersCSV,
   exportSalesCSV,
   exportExpensesCSV,
+  exportBrandsCSV,
 } from '@/lib/backupService';
 import {
   CloudUpload,
@@ -88,6 +89,10 @@ export const SyncCenter: React.FC<SyncCenterProps> = ({
   const [isClearModalOpen, setIsClearModalOpen] = useState(false);
   const [isClearingData, setIsClearingData] = useState(false);
   const [clearSuccessMsg, setClearSuccessMsg] = useState<string | null>(null);
+
+  // Clear Local DB modal states
+  const [isClearLocalDbModalOpen, setIsClearLocalDbModalOpen] = useState(false);
+  const [isClearingLocalDb, setIsClearingLocalDb] = useState(false);
 
   // Sync settings form state when settings prop updates
   const [prevSettings, setPrevSettings] = useState(settings);
@@ -244,6 +249,35 @@ export const SyncCenter: React.FC<SyncCenterProps> = ({
       setIsClearingData(false);
       setIsClearModalOpen(false);
       setClearSuccessMsg(`Reset completed with note: ${err?.message || 'Database cleared.'}`);
+      onDataReset();
+    }
+  };
+
+  const handleConfirmClearLocalDb = async () => {
+    setIsClearingLocalDb(true);
+    setClearSuccessMsg(null);
+    try {
+      await clearAllLocalData();
+      if (typeof window !== 'undefined') {
+        const keysToClear = [
+          'pos_cached_cart',
+          'pos_last_invoice',
+          'sales_history_cache',
+          'inventory_cache',
+        ];
+        keysToClear.forEach((k) => {
+          localStorage.removeItem(k);
+          sessionStorage.removeItem(k);
+        });
+      }
+      setIsClearingLocalDb(false);
+      setIsClearLocalDbModalOpen(false);
+      setClearSuccessMsg('Local Database (IndexedDB) cleared successfully! All cached local records have been cleared.');
+      onDataReset();
+    } catch (err: any) {
+      setIsClearingLocalDb(false);
+      setIsClearLocalDbModalOpen(false);
+      setClearSuccessMsg(`Local DB reset notice: ${err?.message || 'Completed'}`);
       onDataReset();
     }
   };
@@ -496,11 +530,22 @@ export const SyncCenter: React.FC<SyncCenterProps> = ({
 
       {/* Database Backup & Import / Export Section */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg text-slate-100">
-        <div className="flex items-center gap-2 mb-4 border-b border-slate-800 pb-3">
-          <Database className="w-5 h-5 text-indigo-400" />
-          <h3 className="font-bold text-base font-mono uppercase tracking-wider">
-            Database Backup, Restore & Import / Export
-          </h3>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 border-b border-slate-800 pb-3 gap-2">
+          <div className="flex items-center gap-2">
+            <Database className="w-5 h-5 text-indigo-400" />
+            <h3 className="font-bold text-base font-mono uppercase tracking-wider">
+              Database Backup, Restore & Import / Export
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsClearLocalDbModalOpen(true)}
+            className="px-2.5 py-1.5 bg-slate-850 hover:bg-rose-950/80 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-800 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm self-start sm:self-auto"
+            title="Clear only local browser database (IndexedDB)"
+          >
+            <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+            <span>Clear Local DB</span>
+          </button>
         </div>
 
         {importStatus && (
@@ -587,6 +632,12 @@ export const SyncCenter: React.FC<SyncCenterProps> = ({
                 className="py-1.5 px-3 bg-slate-900 hover:bg-slate-800 text-slate-200 font-mono rounded-lg border border-slate-800 text-[11px] flex items-center gap-1.5"
               >
                 <FileText className="w-3.5 h-3.5 text-indigo-400" /> Expenses CSV
+              </button>
+              <button
+                onClick={exportBrandsCSV}
+                className="py-1.5 px-3 bg-slate-900 hover:bg-slate-800 text-slate-200 font-mono rounded-lg border border-slate-800 text-[11px] flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5 text-indigo-400" /> Brands CSV
               </button>
             </div>
           </div>
@@ -714,18 +765,29 @@ export const SyncCenter: React.FC<SyncCenterProps> = ({
 
       {/* Showroom Configuration Form */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg text-slate-100">
-        <div className="flex items-center justify-between mb-4 border-b border-slate-800 pb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 border-b border-slate-800 pb-3 gap-2">
           <div className="flex items-center gap-2">
             <Building2 className="w-5 h-5 text-indigo-400" />
             <h3 className="font-bold text-base font-mono uppercase tracking-wider">
               Showroom & Invoice Print Branding
             </h3>
           </div>
-          {settingsSavedMessage && (
-            <span className="text-emerald-400 text-xs font-mono flex items-center gap-1 bg-emerald-950 px-2.5 py-1 rounded border border-emerald-800">
-              <CheckCircle2 className="w-3.5 h-3.5" /> Settings Saved!
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsClearLocalDbModalOpen(true)}
+              className="px-2.5 py-1.5 bg-slate-850 hover:bg-rose-950/80 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-800 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
+              title="Clear only local browser database (IndexedDB)"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+              <span>Clear Local DB</span>
+            </button>
+            {settingsSavedMessage && (
+              <span className="text-emerald-400 text-xs font-mono flex items-center gap-1 bg-emerald-950 px-2.5 py-1 rounded border border-emerald-800">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Settings Saved!
+              </span>
+            )}
+          </div>
         </div>
 
         <form onSubmit={handleSaveSettings} className="space-y-4 text-xs">
@@ -1044,6 +1106,65 @@ export const SyncCenter: React.FC<SyncCenterProps> = ({
                   <>
                     <Trash2 className="w-4 h-4" />
                     <span>Yes, Permanently Clear All</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear Local DB Confirmation Modal */}
+      {isClearLocalDbModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-slate-900 border border-rose-800/80 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-white">
+            <div className="flex items-start gap-3">
+              <div className="p-3 bg-rose-950 text-rose-400 border border-rose-800 rounded-xl shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-lg font-bold text-rose-200 font-mono">
+                  Clear Local DB?
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  This will purge all locally cached records in your browser&apos;s IndexedDB storage.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2 text-xs font-mono">
+              <div className="text-slate-300">
+                <span className="text-amber-400 font-semibold">• Local Storage:</span> Clears offline IndexedDB tables (inventory, sales, customers, expenses).
+              </div>
+              <div className="text-slate-300">
+                <span className="text-emerald-400 font-semibold">• Cloud Database:</span> Remote records in Firebase Firestore remain completely safe.
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                disabled={isClearingLocalDb}
+                onClick={() => setIsClearLocalDbModalOpen(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-all border border-slate-700 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isClearingLocalDb}
+                onClick={handleConfirmClearLocalDb}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold font-mono transition-all flex items-center gap-2 shadow-lg shadow-rose-900/50 disabled:opacity-50"
+              >
+                {isClearingLocalDb ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Clearing Local DB...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Yes, Clear Local DB</span>
                   </>
                 )}
               </button>

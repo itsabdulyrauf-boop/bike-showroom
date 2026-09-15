@@ -3,7 +3,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { SaleRecord } from '@/types';
 import { formatPKR } from '@/lib/currency';
-import { getAllSales } from '@/lib/db';
+import { getAllSales, deleteSaleRecord } from '@/lib/db';
+import { performManualCloudSync } from '@/lib/syncEngine';
 import { Pagination } from '@/components/Pagination';
 import { EditInvoiceModal } from '@/components/EditInvoiceModal';
 import {
@@ -23,6 +24,9 @@ import {
   CreditCard,
   AlertCircle,
   Pencil,
+  Trash2,
+  AlertTriangle,
+  Loader2,
 } from 'lucide-react';
 
 interface SalesHistoryProps {
@@ -41,6 +45,15 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ onSelectSale }) => {
   const [pageSize, setPageSize] = useState<number>(10);
   const [saleToEdit, setSaleToEdit] = useState<SaleRecord | null>(null);
 
+  // Deletion State
+  const [saleToDelete, setSaleToDelete] = useState<SaleRecord | null>(null);
+  const [restoreStockOnDelete, setRestoreStockOnDelete] = useState<boolean>(true);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [deleteNotification, setDeleteNotification] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
+
   const loadSales = useCallback(() => {
     getAllSales()
       .then((data) => {
@@ -52,6 +65,38 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ onSelectSale }) => {
         setLoading(false);
       });
   }, []);
+
+  const handleConfirmDelete = async () => {
+    if (!saleToDelete) return;
+    setIsDeleting(true);
+    try {
+      const invNumber = saleToDelete.invoiceNumber;
+      await deleteSaleRecord(saleToDelete.id, restoreStockOnDelete);
+      // Auto-sync deletion with Firestore
+      try {
+        await performManualCloudSync();
+      } catch (syncErr) {
+        console.warn('Post-delete Firestore sync note:', syncErr);
+      }
+      setSaleToDelete(null);
+      loadSales();
+      setDeleteNotification({
+        type: 'success',
+        text: `Invoice #${invNumber} was deleted and synced with Firestore successfully.`,
+      });
+      setTimeout(() => {
+        setDeleteNotification(null);
+      }, 5000);
+    } catch (err: any) {
+      console.error('Delete invoice error:', err);
+      setDeleteNotification({
+        type: 'error',
+        text: `Failed to delete invoice: ${err?.message || 'Unknown error'}`,
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   useEffect(() => {
     loadSales();
@@ -246,6 +291,32 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ onSelectSale }) => {
           )}
         </div>
       </div>
+
+      {/* Delete Feedback Banner */}
+      {deleteNotification && (
+        <div
+          className={`p-3.5 rounded-xl border text-xs font-mono flex items-center justify-between gap-3 shadow-lg ${
+            deleteNotification.type === 'success'
+              ? 'bg-emerald-950/80 border-emerald-700 text-emerald-200'
+              : 'bg-rose-950/80 border-rose-700 text-rose-200'
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            {deleteNotification.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            )}
+            <span>{deleteNotification.text}</span>
+          </div>
+          <button
+            onClick={() => setDeleteNotification(null)}
+            className="text-slate-400 hover:text-white"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Monthly Filter Bar */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
@@ -493,6 +564,14 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ onSelectSale }) => {
                           minute: '2-digit',
                         })}
                       </span>
+                      {sale.letterIssued === 'Yes' && (
+                        <span
+                          className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-400 bg-emerald-950/70 px-1.5 py-0.5 rounded border border-emerald-800/70 mt-1"
+                          title={sale.issuanceDate ? `Letter Issued on ${sale.issuanceDate}` : 'Letter Issued'}
+                        >
+                          Letter Issued {sale.issuanceDate ? `(${sale.issuanceDate})` : ''}
+                        </span>
+                      )}
                     </td>
                     <td className="p-4">
                       {sale.accountNumber ? (
@@ -591,6 +670,17 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ onSelectSale }) => {
                           <Pencil className="w-3.5 h-3.5 text-indigo-400" />
                           <span>Edit</span>
                         </button>
+                        <button
+                          onClick={() => {
+                            setSaleToDelete(sale);
+                            setRestoreStockOnDelete(true);
+                          }}
+                          className="p-1.5 sm:px-2.5 sm:py-1.5 bg-slate-800 hover:bg-rose-950/80 text-slate-400 hover:text-rose-300 border border-slate-700 hover:border-rose-800 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
+                          title="Delete Invoice & Sync with Firestore"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                          <span className="hidden sm:inline">Delete</span>
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -651,6 +741,98 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ onSelectSale }) => {
           setSaleToEdit(null);
         }}
       />
+
+      {/* Delete Invoice Confirmation Popup Modal */}
+      {saleToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-slate-900 border border-rose-800/80 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-white">
+            <div className="flex items-start gap-3">
+              <div className="p-3 bg-rose-950 text-rose-400 border border-rose-800 rounded-xl shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-lg font-bold text-rose-200">
+                  Delete Invoice #{saleToDelete.invoiceNumber}?
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Are you sure you want to delete this invoice? It will be removed from your local database and automatically synced to Firestore Cloud.
+                </p>
+              </div>
+            </div>
+
+            {/* Sale Summary Box */}
+            <div className="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-1.5 text-xs">
+              <div className="flex justify-between text-slate-400">
+                <span>Customer:</span>
+                <span className="font-semibold text-slate-200">{saleToDelete.customerName}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Invoice Total:</span>
+                <span className="font-bold text-emerald-400 font-mono">
+                  {formatPKR(saleToDelete.totalPKR)}
+                </span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Date:</span>
+                <span className="text-slate-300 font-mono">
+                  {new Date(saleToDelete.createdAt).toLocaleDateString('en-PK', {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                  })}
+                </span>
+              </div>
+              {saleToDelete.items && saleToDelete.items.length > 0 && (
+                <div className="pt-1.5 border-t border-slate-800/80 text-[11px] text-slate-400">
+                  <span className="font-semibold text-slate-300">Vehicle / Items:</span>{' '}
+                  {saleToDelete.items.map((it) => `${it.make} ${it.model}`).join(', ')}
+                </div>
+              )}
+            </div>
+
+            {/* Restore Stock Option */}
+            <label className="flex items-center gap-2.5 text-xs text-slate-300 cursor-pointer select-none bg-slate-950/60 p-2.5 rounded-lg border border-slate-800">
+              <input
+                type="checkbox"
+                checked={restoreStockOnDelete}
+                onChange={(e) => setRestoreStockOnDelete(e.target.checked)}
+                className="w-4 h-4 rounded text-rose-600 bg-slate-900 border-slate-700 focus:ring-rose-500"
+              />
+              <span>Restore sold vehicle(s) back into Showroom Inventory stock</span>
+            </label>
+
+            {/* Action Buttons: Yes / No */}
+            <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setSaleToDelete(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold transition-all border border-slate-700 disabled:opacity-50"
+              >
+                No
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleConfirmDelete}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-rose-900/50 disabled:opacity-50"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Deleting & Syncing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Yes</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

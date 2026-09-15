@@ -2,10 +2,40 @@ export type SyncStatus = 'synced' | 'pending';
 
 export type BikeStatus = 'Available' | 'Sold' | 'Reserved';
 
+export type StockStatus = 'Active' | 'Completed' | 'Archived';
+
+export interface BrandItem {
+  id: string;
+  name: string; // e.g., "Honda", "Yamaha", "Crown"
+  country?: string; // Origin / Country / Region (e.g. "Japan", "Pakistan", "China")
+  description?: string; // Notes / Brand info
+  status: 'Active' | 'Inactive';
+  createdAt: string;
+  updatedAt: string;
+  syncStatus: SyncStatus;
+}
+
+export interface StockEntry {
+  id: string;
+  batchNumber: string; // Stock Serial / Batch Number (e.g., STK-2026-001)
+  stockName: string; // Stock Name or Reference
+  stockDate: string; // YYYY-MM-DD
+  status: StockStatus;
+  totalQuantity: number; // Unit / Quantity received
+  purchaseCostPKR: number; // Total purchase/investment cost
+  supplier?: string; // Supplier / Vendor / Factory
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+  syncStatus: SyncStatus;
+}
+
 export type InventoryItemType = 'New Bike' | 'Used Bike' | 'Rickshaw Body' | 'Auto Rickshaw' | 'Other';
 
 export interface InventoryItem {
   id: string;
+  stockId?: string; // Reference to StockEntry
+  stockBatchNumber?: string; // Serial/batch number for display
   itemType?: InventoryItemType;
   make: string;
   model: string;
@@ -37,6 +67,8 @@ export interface CustomerItem {
 
 export interface SaleItem {
   bikeId?: string;
+  stockId?: string;
+  purchasePricePKR?: number;
   itemType?: InventoryItemType;
   make: string;
   model: string;
@@ -73,6 +105,8 @@ export interface SaleRecord {
   accountNumber?: string;
   warrantyMonths: number;
   registrationStatus: RegistrationStatus;
+  letterIssued?: 'Yes' | 'No';
+  issuanceDate?: string;
   notes?: string;
   createdAt: string;
   syncStatus: SyncStatus;
@@ -120,6 +154,8 @@ export interface PendingSyncCounts {
   sales: number;
   customers: number;
   expenses: number;
+  stocks: number;
+  brands: number;
   total: number;
 }
 
@@ -134,6 +170,8 @@ export interface DatabaseBackup {
   version: string;
   backupDate: string;
   showroomSettings: ShowroomSettings;
+  brands?: BrandItem[];
+  stocks?: StockEntry[];
   inventory: InventoryItem[];
   sales: SaleRecord[];
   customers: CustomerItem[];

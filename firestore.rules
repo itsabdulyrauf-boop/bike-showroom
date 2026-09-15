@@ -13,6 +13,12 @@ service cloud.firestore {
     match /expenses/{expenseId} {
       allow read, write: if true;
     }
+    match /stocks/{stockId} {
+      allow read, write: if true;
+    }
+    match /brands/{brandId} {
+      allow read, write: if true;
+    }
     match /settings/{settingId} {
       allow read, write: if true;
     }

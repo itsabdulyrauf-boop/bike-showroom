@@ -7,6 +7,8 @@ import {
   SaleItem,
   CustomerItem,
   ExpenseRecord,
+  StockEntry,
+  BrandItem,
   ShowroomSettings,
   PendingSyncCounts,
 } from '@/types';
@@ -14,11 +16,12 @@ import {
   INITIAL_INVENTORY,
   INITIAL_CUSTOMERS,
   INITIAL_EXPENSES,
+  INITIAL_BRANDS,
   INITIAL_SHOWROOM_SETTINGS,
 } from './sampleData';
 
 const DB_NAME = 'BikeShowroomPOS_DB';
-const DB_VERSION = 1;
+const DB_VERSION = 3;
 
 let dbPromise: Promise<IDBPDatabase> | null = null;
 
@@ -53,6 +56,20 @@ export function getLocalDB(): Promise<IDBPDatabase> {
           expStore.createIndex('by-date', 'date');
         }
 
+        if (!db.objectStoreNames.contains('stocks')) {
+          const stockStore = db.createObjectStore('stocks', { keyPath: 'id' });
+          stockStore.createIndex('by-syncStatus', 'syncStatus');
+          stockStore.createIndex('by-status', 'status');
+          stockStore.createIndex('by-stockDate', 'stockDate');
+        }
+
+        if (!db.objectStoreNames.contains('brands')) {
+          const brandStore = db.createObjectStore('brands', { keyPath: 'id' });
+          brandStore.createIndex('by-syncStatus', 'syncStatus');
+          brandStore.createIndex('by-status', 'status');
+          brandStore.createIndex('by-name', 'name');
+        }
+
         if (!db.objectStoreNames.contains('settings')) {
           db.createObjectStore('settings', { keyPath: 'id' });
         }
@@ -75,6 +92,19 @@ export async function seedInitialDataIfEmpty(): Promise<void> {
   const existingSettings = await db.get('settings', 'showroom_main_settings');
   if (!existingSettings) {
     await db.put('settings', INITIAL_SHOWROOM_SETTINGS);
+  }
+
+  // 1b. Ensure initial dynamic brands exist locally
+  try {
+    const brandsCount = await db.count('brands');
+    if (brandsCount === 0) {
+      for (const brand of INITIAL_BRANDS) {
+        await db.put('brands', brand);
+      }
+      console.log(`[POS DB] Initialized ${INITIAL_BRANDS.length} default vehicle brands.`);
+    }
+  } catch (bErr) {
+    console.warn('[POS DB] Error initializing brands store:', bErr);
   }
 
   // 2. Try pulling and reconciling existing data from Cloud in background with a quick timeout
@@ -116,7 +146,29 @@ export async function seedInitialDataIfEmpty(): Promise<void> {
             }
           }
 
-          // 4. Sales Sync & Reconcile
+          // 4. Stocks Sync & Reconcile
+          const stocksSnap = await getDocs(collection(firestore, 'stocks'));
+          for (const docSnap of stocksSnap.docs) {
+            const remoteStock = docSnap.data() as StockEntry;
+            const id = docSnap.id || remoteStock.id;
+            const localStock = await db.get('stocks', id);
+            if (!localStock || (remoteStock.updatedAt && (!localStock.updatedAt || new Date(remoteStock.updatedAt) > new Date(localStock.updatedAt)))) {
+              await db.put('stocks', { ...remoteStock, id, syncStatus: 'synced' });
+            }
+          }
+
+          // 5. Brands Sync & Reconcile
+          const brandsSnap = await getDocs(collection(firestore, 'brands'));
+          for (const docSnap of brandsSnap.docs) {
+            const remoteBrand = docSnap.data() as BrandItem;
+            const id = docSnap.id || remoteBrand.id;
+            const localBrand = await db.get('brands', id);
+            if (!localBrand || (remoteBrand.updatedAt && (!localBrand.updatedAt || new Date(remoteBrand.updatedAt) > new Date(localBrand.updatedAt)))) {
+              await db.put('brands', { ...remoteBrand, id, syncStatus: 'synced' });
+            }
+          }
+
+          // 6. Sales Sync & Reconcile
           const salesSnap = await getDocs(collection(firestore, 'sales'));
           for (const docSnap of salesSnap.docs) {
             const remoteSale = docSnap.data() as SaleRecord;
@@ -127,7 +179,7 @@ export async function seedInitialDataIfEmpty(): Promise<void> {
             }
           }
 
-          // 5. Settings Sync
+          // 7. Settings Sync
           const settingsSnap = await getDocs(collection(firestore, 'settings'));
           if (!settingsSnap.empty) {
             for (const docSnap of settingsSnap.docs) {
@@ -247,6 +299,72 @@ export async function deleteInventoryItem(id: string): Promise<void> {
   }
 }
 
+// ================= STOCK ENTRY CRUD =================
+export async function getAllStocks(): Promise<StockEntry[]> {
+  const db = await getLocalDB();
+  const stocks: StockEntry[] = await db.getAll('stocks');
+  return stocks.sort((a, b) => {
+    const timeA = new Date(a.stockDate || a.createdAt).getTime();
+    const timeB = new Date(b.stockDate || b.createdAt).getTime();
+    if (timeB !== timeA) return timeB - timeA;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+}
+
+export async function getStockById(id: string): Promise<StockEntry | undefined> {
+  const db = await getLocalDB();
+  return db.get('stocks', id);
+}
+
+export async function saveStockEntry(stock: StockEntry): Promise<void> {
+  const db = await getLocalDB();
+  const firestore = getFirestoreDb();
+
+  const stockToSave: StockEntry = {
+    ...stock,
+    updatedAt: new Date().toISOString(),
+    syncStatus: 'synced',
+  };
+
+  if (firestore) {
+    try {
+      console.log(`[POS DB] Syncing Stock Entry ${stock.id} (${stock.batchNumber}) to Cloud...`);
+      await setDoc(doc(firestore, 'stocks', stock.id), sanitizeForFirestore(stockToSave), { merge: true });
+      console.log(`[POS DB] Stock Entry ${stock.id} saved to Cloud successfully.`);
+    } catch (e) {
+      console.warn(`[POS DB] Cloud write warning for stock ${stock.id}:`, e);
+      stockToSave.syncStatus = 'pending';
+    }
+  } else {
+    stockToSave.syncStatus = 'pending';
+  }
+
+  await db.put('stocks', stockToSave);
+}
+
+/**
+ * Marks a stock entry as Archived.
+ * IMPORTANT: Stock records are NEVER permanently deleted so that historical
+ * procurement data, stock valuation, and stock-wise profit analytics remain permanently accurate.
+ */
+export async function archiveStockEntry(id: string, reason?: string): Promise<void> {
+  const db = await getLocalDB();
+  const existing = await db.get('stocks', id);
+  if (!existing) return;
+
+  const updated: StockEntry = {
+    ...existing,
+    status: 'Archived',
+    notes: reason
+      ? `${existing.notes ? existing.notes + ' | ' : ''}Archived: ${reason}`
+      : existing.notes,
+    updatedAt: new Date().toISOString(),
+    syncStatus: 'pending',
+  };
+
+  await saveStockEntry(updated);
+}
+
 // ================= SALES CRUD =================
 export async function getAllSales(): Promise<SaleRecord[]> {
   const db = await getLocalDB();
@@ -311,6 +429,30 @@ export async function saveSaleRecord(sale: SaleRecord): Promise<void> {
 
   console.log(`[POS DB] Processing sale record ${sale.id} for PKR ${sale.totalPKR}...`);
   const saleToSave: SaleRecord = { ...sale, syncStatus: 'synced' };
+
+  // Ensure items capture stockId and purchasePricePKR for permanent historical profit analytics
+  try {
+    const allInv = await db.getAll('inventory');
+    for (const item of saleToSave.items) {
+      const matched = item.bikeId
+        ? allInv.find((b) => b.id === item.bikeId)
+        : allInv.find(
+            (b) =>
+              (item.chassisNumber && b.chassisNumber?.toLowerCase() === item.chassisNumber.toLowerCase()) ||
+              (item.engineNumber && item.engineNumber !== 'N/A' && b.engineNumber?.toLowerCase() === item.engineNumber.toLowerCase())
+          );
+      if (matched) {
+        if (!item.stockId && matched.stockId) {
+          item.stockId = matched.stockId;
+        }
+        if (item.purchasePricePKR === undefined && matched.purchasePricePKR !== undefined) {
+          item.purchasePricePKR = matched.purchasePricePKR;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[POS DB] Error attaching inventory purchase metadata to sale:', err);
+  }
 
   if (firestore) {
     try {
@@ -531,6 +673,70 @@ export async function deleteExpense(id: string): Promise<void> {
   }
 }
 
+// ================= BRANDS CRUD =================
+export async function getAllBrands(): Promise<BrandItem[]> {
+  const db = await getLocalDB();
+  const brands: BrandItem[] = await db.getAll('brands');
+  if (brands.length === 0) {
+    for (const b of INITIAL_BRANDS) {
+      await db.put('brands', b);
+    }
+    return INITIAL_BRANDS;
+  }
+  return brands.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function getBrandById(id: string): Promise<BrandItem | undefined> {
+  const db = await getLocalDB();
+  return db.get('brands', id);
+}
+
+export async function saveBrand(brand: BrandItem): Promise<BrandItem> {
+  const db = await getLocalDB();
+  const firestore = getFirestoreDb();
+
+  const brandToSave: BrandItem = {
+    ...brand,
+    name: brand.name.trim(),
+    updatedAt: new Date().toISOString(),
+    syncStatus: 'synced',
+  };
+
+  if (firestore) {
+    try {
+      console.log(`[POS DB] Syncing Brand ${brand.id} (${brand.name}) to Firestore...`);
+      await setDoc(doc(firestore, 'brands', brand.id), sanitizeForFirestore(brandToSave), { merge: true });
+      console.log(`[POS DB] Brand ${brand.id} saved to Firestore successfully.`);
+    } catch (e) {
+      console.warn(`[POS DB] Firestore brand save warning for ${brand.id}:`, e);
+      brandToSave.syncStatus = 'pending';
+    }
+  } else {
+    brandToSave.syncStatus = 'pending';
+  }
+
+  await db.put('brands', brandToSave);
+  return brandToSave;
+}
+
+export async function deleteBrand(id: string): Promise<void> {
+  const db = await getLocalDB();
+  const firestore = getFirestoreDb();
+
+  console.log(`[POS DB] Deleting Brand ${id} locally...`);
+  await db.delete('brands', id);
+
+  if (firestore) {
+    try {
+      console.log(`[POS DB] Deleting Brand ${id} from Firestore...`);
+      await deleteDoc(doc(firestore, 'brands', id));
+      console.log(`[POS DB] Brand ${id} deleted from Firestore successfully.`);
+    } catch (e) {
+      console.warn(`[POS DB] Error deleting brand ${id} from Firestore:`, e);
+    }
+  }
+}
+
 // ================= SETTINGS =================
 export async function getShowroomSettings(): Promise<ShowroomSettings> {
   const db = await getLocalDB();
@@ -564,18 +770,24 @@ export async function getPendingSyncCounts(): Promise<PendingSyncCounts> {
   const salesList = await db.getAll('sales');
   const custsList = await db.getAll('customers');
   const expList = await db.getAll('expenses');
+  const stockList = await db.getAll('stocks');
+  const brandList = await db.getAll('brands');
 
   const pendingInv = invList.filter((i) => i.syncStatus === 'pending').length;
   const pendingSales = salesList.filter((s) => s.syncStatus === 'pending').length;
   const pendingCusts = custsList.filter((c) => c.syncStatus === 'pending').length;
   const pendingExp = expList.filter((e) => e.syncStatus === 'pending').length;
+  const pendingStocks = stockList.filter((s) => s.syncStatus === 'pending').length;
+  const pendingBrands = brandList.filter((b) => b.syncStatus === 'pending').length;
 
   return {
     inventory: pendingInv,
     sales: pendingSales,
     customers: pendingCusts,
     expenses: pendingExp,
-    total: pendingInv + pendingSales + pendingCusts + pendingExp,
+    stocks: pendingStocks,
+    brands: pendingBrands,
+    total: pendingInv + pendingSales + pendingCusts + pendingExp + pendingStocks + pendingBrands,
   };
 }
 
@@ -586,6 +798,11 @@ export async function clearAllLocalData(): Promise<void> {
   await db.clear('sales');
   await db.clear('customers');
   await db.clear('expenses');
+  await db.clear('stocks');
+  await db.clear('brands');
+  for (const b of INITIAL_BRANDS) {
+    await db.put('brands', b);
+  }
   await db.clear('settings');
   await db.put('settings', INITIAL_SHOWROOM_SETTINGS);
 }
@@ -601,6 +818,11 @@ export async function purgeAllLocalCachedData(): Promise<{ success: boolean; mes
     await db.clear('sales');
     await db.clear('customers');
     await db.clear('expenses');
+    await db.clear('stocks');
+    await db.clear('brands');
+    for (const b of INITIAL_BRANDS) {
+      await db.put('brands', b);
+    }
     await db.clear('settings');
     await db.put('settings', INITIAL_SHOWROOM_SETTINGS);
 
@@ -633,7 +855,7 @@ export async function purgeAllLocalCachedData(): Promise<{ success: boolean; mes
 export async function clearCompleteDatabase(wipeFirestore: boolean = true): Promise<{
   success: boolean;
   message: string;
-  clearedCounts: { inventory: number; sales: number; customers: number; expenses: number };
+  clearedCounts: { inventory: number; sales: number; customers: number; expenses: number; stocks?: number; brands?: number };
 }> {
   const db = await getLocalDB();
   const counts = {
@@ -641,6 +863,8 @@ export async function clearCompleteDatabase(wipeFirestore: boolean = true): Prom
     sales: await db.count('sales'),
     customers: await db.count('customers'),
     expenses: await db.count('expenses'),
+    stocks: await db.count('stocks'),
+    brands: await db.count('brands'),
   };
 
   // 1. Clear all IndexedDB stores
@@ -648,13 +872,18 @@ export async function clearCompleteDatabase(wipeFirestore: boolean = true): Prom
   await db.clear('sales');
   await db.clear('customers');
   await db.clear('expenses');
+  await db.clear('stocks');
+  await db.clear('brands');
+  for (const b of INITIAL_BRANDS) {
+    await db.put('brands', b);
+  }
   await db.put('settings', INITIAL_SHOWROOM_SETTINGS);
 
   // 2. Wipe Firestore documents if enabled
   if (wipeFirestore) {
     const firestore = getFirestoreDb();
     if (firestore) {
-      const collections = ['inventory', 'sales', 'customers', 'expenses'];
+      const collections = ['inventory', 'sales', 'customers', 'expenses', 'stocks', 'brands'];
       for (const colName of collections) {
         try {
           const snap = await getDocs(collection(firestore, colName));

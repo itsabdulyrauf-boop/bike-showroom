@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { SaleRecord, ExpenseRecord, InventoryItem } from '@/types';
+import { SaleRecord, ExpenseRecord, InventoryItem, StockEntry } from '@/types';
 import { formatPKR } from '@/lib/currency';
-import { getAllSales, getAllExpenses, getAllInventory } from '@/lib/db';
+import { getAllSales, getAllExpenses, getAllInventory, getAllStocks } from '@/lib/db';
 import {
   BarChart3,
   TrendingUp,
@@ -22,23 +22,31 @@ import {
   ChevronRight,
   X,
   CreditCard,
+  Boxes,
+  Layers,
+  ArrowUpRight,
+  ShieldCheck,
+  Archive,
 } from 'lucide-react';
 
 export const AnalyticsDashboard: React.FC = () => {
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [stocks, setStocks] = useState<StockEntry[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedMonth, setSelectedMonth] = useState<string>('all'); // 'all' | 'YYYY-MM'
+  const [stockSearchQuery, setStockSearchQuery] = useState<string>('');
 
   useEffect(() => {
     let isMounted = true;
-    Promise.all([getAllSales(), getAllExpenses(), getAllInventory()])
-      .then(([s, e, inv]) => {
+    Promise.all([getAllSales(), getAllExpenses(), getAllInventory(), getAllStocks()])
+      .then(([s, e, inv, stk]) => {
         if (isMounted) {
           setSales(s);
           setExpenses(e);
           setInventory(inv);
+          setStocks(stk);
           setLoading(false);
         }
       })
@@ -222,16 +230,79 @@ export const AnalyticsDashboard: React.FC = () => {
     downloadCSV(filename, headers, rows);
   };
 
+  // Export Stock Analytics CSV
+  const handleExportStocksCSV = () => {
+    const headers = [
+      'Batch Number',
+      'Stock Name / Reference',
+      'Arrival Date',
+      'Status',
+      'Total Units Procured',
+      'Units Sold',
+      'Remaining Stock',
+      'Total Investment (PKR)',
+      'Total Revenue (PKR)',
+      'Cost of Sold Units (PKR)',
+      'Realized Profit (PKR)',
+      'Profit Margin %',
+      'Investment Recovery (PKR)',
+    ];
+
+    const rows = stockWisePerformance.map((stk) => [
+      stk.batchNumber,
+      stk.stockName,
+      stk.stockDate,
+      stk.status,
+      stk.totalQuantity,
+      stk.soldUnits,
+      stk.remainingUnits,
+      stk.totalInvestmentPKR,
+      stk.totalRevenuePKR,
+      stk.cogsPKR,
+      stk.profitPKR,
+      `${stk.profitMarginPercent}%`,
+      stk.investmentRecoveryPKR,
+    ]);
+
+    const filename = `Stock_Performance_Report_${new Date().toISOString().split('T')[0]}.csv`;
+    downloadCSV(filename, headers, rows);
+  };
+
   // Compute Metrics for current filter
   const totalRevenuePKR = filteredSales.reduce((acc, s) => acc + (Number(s.totalPKR) || 0), 0);
   const totalExpensePKR = filteredExpenses.reduce((acc, e) => acc + (Number(e.amountPKR) || 0), 0);
-  const netProfitPKR = totalRevenuePKR - totalExpensePKR;
+
+  // Dynamic Cost of Goods Sold (Actual vehicle procurement cost for sold items)
+  const totalCogsPKR = filteredSales.reduce((acc, sale) => {
+    const saleCost = sale.items.reduce((sum, item) => {
+      let unitCost = Number(item.purchasePricePKR);
+      if (!unitCost || isNaN(unitCost)) {
+        const invItem = inventory.find((inv) => inv.id === item.bikeId);
+        unitCost = invItem ? Number(invItem.purchasePricePKR) || 0 : 0;
+      }
+      return sum + unitCost * (Number(item.quantity) || 1);
+    }, 0);
+    return acc + saleCost;
+  }, 0);
+
+  // Profit Calculation: Profit = Revenue - Actual Cost (COGS + Operating Expenses)
+  const grossProfitPKR = totalRevenuePKR - totalCogsPKR;
+  const totalActualCostPKR = totalCogsPKR + totalExpensePKR;
+  const netProfitPKR = totalRevenuePKR - totalActualCostPKR;
+
+  const grossMarginPercent =
+    totalRevenuePKR > 0 ? Math.round((grossProfitPKR / totalRevenuePKR) * 100) : 0;
+  const netMarginPercent =
+    totalRevenuePKR > 0 ? Math.round((netProfitPKR / totalRevenuePKR) * 100) : 0;
+
   const totalBikesSold = filteredSales.reduce(
     (acc, s) => acc + s.items.reduce((sum, item) => sum + (Number(item.quantity) || 1), 0),
     0
   );
 
-  const availableStock = inventory.filter((i) => i.status === 'Available' && (Number(i.stockCount) || 0) > 0);
+  const availableStock = inventory.filter(
+    (i) => i.status === 'Available' && (Number(i.stockCount) || 0) > 0
+  );
   const totalAvailableStockUnits = availableStock.reduce(
     (acc, i) => acc + (Number(i.stockCount) || 1),
     0
@@ -240,6 +311,81 @@ export const AnalyticsDashboard: React.FC = () => {
     (acc, i) => acc + (Number(i.sellingPricePKR) || 0) * (Number(i.stockCount) || 1),
     0
   );
+  const totalStockCostValuationPKR = availableStock.reduce(
+    (acc, i) => acc + (Number(i.purchasePricePKR) || 0) * (Number(i.stockCount) || 1),
+    0
+  );
+
+  // Dynamic Stock-Wise Performance Analytics
+  const stockWisePerformance = stocks.map((stock) => {
+    const totalInvestment = Number(stock.purchaseCostPKR) || 0;
+    const totalUnits = Number(stock.totalQuantity) || 0;
+    const unitCost = totalUnits > 0 ? Math.round(totalInvestment / totalUnits) : 0;
+
+    // Filter inventory assigned to this stock
+    const assignedInv = inventory.filter((inv) => inv.stockId === stock.id);
+    const remainingUnits = assignedInv
+      .filter((inv) => inv.status === 'Available')
+      .reduce((sum, inv) => sum + (Number(inv.stockCount) || 1), 0);
+
+    // Filter sales related to this stock
+    let soldUnits = 0;
+    let stockRevenue = 0;
+    let stockCogs = 0;
+
+    sales.forEach((sale) => {
+      sale.items.forEach((it) => {
+        const matchesDirectly = it.stockId === stock.id;
+        const matchesInv = assignedInv.some((inv) => inv.id === it.bikeId);
+
+        if (matchesDirectly || matchesInv) {
+          const qty = Number(it.quantity) || 1;
+          soldUnits += qty;
+          stockRevenue += (Number(it.pricePKR) || 0) * qty;
+
+          let c = Number(it.purchasePricePKR);
+          if (!c || isNaN(c)) c = unitCost;
+          stockCogs += c * qty;
+        }
+      });
+    });
+
+    const profitPKR = stockRevenue - stockCogs;
+    const profitMarginPercent =
+      stockRevenue > 0 ? Math.round((profitPKR / stockRevenue) * 100) : 0;
+    const investmentRecoveryPKR = stockRevenue - totalInvestment;
+
+    return {
+      id: stock.id,
+      batchNumber: stock.batchNumber,
+      stockName: stock.stockName,
+      stockDate: stock.stockDate,
+      status: stock.status,
+      supplier: stock.supplier || 'Standard',
+      totalQuantity: totalUnits,
+      soldUnits,
+      remainingUnits,
+      unitCostPKR: unitCost,
+      totalInvestmentPKR: totalInvestment,
+      totalRevenuePKR: stockRevenue,
+      cogsPKR: stockCogs,
+      profitPKR,
+      profitMarginPercent,
+      investmentRecoveryPKR,
+    };
+  });
+
+  // Filtered stocks according to search
+  const filteredStockPerformance = stockSearchQuery.trim()
+    ? stockWisePerformance.filter((s) => {
+        const q = stockSearchQuery.toLowerCase();
+        return (
+          s.batchNumber.toLowerCase().includes(q) ||
+          s.stockName.toLowerCase().includes(q) ||
+          s.supplier.toLowerCase().includes(q)
+        );
+      })
+    : stockWisePerformance;
 
   // Group Sales by Bike Model - Proportionally allocating invoice totals so model revenue equals gross income
   const modelSalesCount: { [key: string]: { model: string; count: number; totalPKR: number } } = {};
@@ -398,11 +544,11 @@ export const AnalyticsDashboard: React.FC = () => {
 
       {/* Overview Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Sales */}
+        {/* Total Sales Revenue */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg text-white">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-mono text-slate-400 uppercase">
-              {selectedMonth === 'all' ? 'Gross Sales Income' : 'Monthly Sales'}
+              {selectedMonth === 'all' ? 'Gross Sales Revenue' : 'Monthly Sales Revenue'}
             </span>
             <span className="p-2 bg-emerald-950 text-emerald-400 rounded-lg border border-emerald-800/50">
               <TrendingUp className="w-4 h-4" />
@@ -412,29 +558,29 @@ export const AnalyticsDashboard: React.FC = () => {
             {formatPKR(totalRevenuePKR)}
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            {filteredSales.length} Sales transactions ({totalBikesSold} Units)
+            {filteredSales.length} Invoices ({totalBikesSold} Vehicles Sold)
           </p>
         </div>
 
-        {/* Total Expenses */}
+        {/* Total Actual Cost (COGS + Showroom Expenses) */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg text-white">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-mono text-slate-400 uppercase">
-              {selectedMonth === 'all' ? 'Showroom Expenses' : 'Monthly Expenses'}
+              {selectedMonth === 'all' ? 'Total Actual Cost' : 'Monthly Actual Cost'}
             </span>
             <span className="p-2 bg-rose-950 text-rose-400 rounded-lg border border-rose-800/50">
               <TrendingDown className="w-4 h-4" />
             </span>
           </div>
           <div className="text-xl font-black font-mono text-rose-400">
-            {formatPKR(totalExpensePKR)}
+            {formatPKR(totalActualCostPKR)}
           </div>
-          <p className="text-xs text-slate-400 mt-1">
-            {filteredExpenses.length} Operational costs logged
+          <p className="text-[11px] text-slate-400 mt-1 font-mono truncate">
+            COGS: {formatPKR(totalCogsPKR)} | OpEx: {formatPKR(totalExpensePKR)}
           </p>
         </div>
 
-        {/* Net Profit */}
+        {/* Dynamic Net Profit: Profit = Revenue - Actual Cost */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg text-white">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-mono text-slate-400 uppercase">
@@ -451,13 +597,16 @@ export const AnalyticsDashboard: React.FC = () => {
           >
             {formatPKR(netProfitPKR)}
           </div>
-          <p className="text-xs text-slate-400 mt-1">Sales revenue minus operational costs</p>
+          <div className="flex items-center justify-between text-[11px] text-slate-400 mt-1">
+            <span>Margin: <strong className={netMarginPercent >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{netMarginPercent}%</strong></span>
+            <span className="text-slate-500 font-mono">Gross: {grossMarginPercent}%</span>
+          </div>
         </div>
 
         {/* Inventory Valuation */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg text-white">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-mono text-slate-400 uppercase">Stock Valuation</span>
+            <span className="text-xs font-mono text-slate-400 uppercase">Available Stock Value</span>
             <span className="p-2 bg-blue-950 text-blue-400 rounded-lg border border-blue-800/50">
               <Package className="w-4 h-4" />
             </span>
@@ -465,9 +614,176 @@ export const AnalyticsDashboard: React.FC = () => {
           <div className="text-xl font-black font-mono text-blue-300">
             {formatPKR(totalStockValuationPKR)}
           </div>
-          <p className="text-xs text-slate-400 mt-1">
-            {totalAvailableStockUnits} Available motorcycle / vehicle units
+          <p className="text-[11px] text-slate-400 mt-1 font-mono truncate">
+            {totalAvailableStockUnits} Available units (Cost: {formatPKR(totalStockCostValuationPKR)})
           </p>
+        </div>
+      </div>
+
+      {/* Stock-Wise Procurement & Performance Analytics Section */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl text-slate-100">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-5 border-b border-slate-800 pb-4 gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-cyan-950 text-cyan-400 rounded-xl border border-cyan-800/60">
+              <Boxes className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-base font-mono uppercase tracking-wider text-white">
+                Stock-Wise Performance Analytics
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Dynamic tracking of investment, revenue, profit, and remaining inventory per procurement batch
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <input
+              type="text"
+              placeholder="Search batch # or stock name..."
+              value={stockSearchQuery}
+              onChange={(e) => setStockSearchQuery(e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
+            />
+            <button
+              type="button"
+              onClick={handleExportStocksCSV}
+              disabled={stockWisePerformance.length === 0}
+              className="py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all disabled:opacity-50"
+            >
+              <Download className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Export Stocks CSV</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Stock Analytics Table */}
+        <div className="overflow-x-auto rounded-xl border border-slate-800">
+          <table className="w-full text-left text-xs text-slate-300">
+            <thead className="bg-slate-950 text-slate-400 uppercase font-mono border-b border-slate-800 text-[11px]">
+              <tr>
+                <th className="py-3 px-4 font-semibold">Stock Batch</th>
+                <th className="py-3 px-3 font-semibold">Status</th>
+                <th className="py-3 px-3 font-semibold text-center">Procured / Sold / Left</th>
+                <th className="py-3 px-3 font-semibold text-right">Total Investment</th>
+                <th className="py-3 px-3 font-semibold text-right">Revenue Generated</th>
+                <th className="py-3 px-3 font-semibold text-right">Realized Profit</th>
+                <th className="py-3 px-4 font-semibold text-right">Recovery Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/60 font-sans">
+              {filteredStockPerformance.length > 0 ? (
+                filteredStockPerformance.map((stk) => {
+                  const soldPercent =
+                    stk.totalQuantity > 0
+                      ? Math.min(100, Math.round((stk.soldUnits / stk.totalQuantity) * 100))
+                      : 0;
+
+                  return (
+                    <tr key={stk.id} className="hover:bg-slate-800/40 transition-colors">
+                      <td className="py-3 px-4">
+                        <div className="font-bold text-white font-mono text-xs">{stk.batchNumber}</div>
+                        <div className="text-[11px] text-slate-400 truncate max-w-[200px]">
+                          {stk.stockName}
+                        </div>
+                        <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                          Arrived: {stk.stockDate}
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-3">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider ${
+                            stk.status === 'Active'
+                              ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                              : stk.status === 'Completed'
+                              ? 'bg-amber-950 text-amber-400 border border-amber-800'
+                              : 'bg-slate-800 text-slate-400 border border-slate-700'
+                          }`}
+                        >
+                          {stk.status}
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-3 text-center">
+                        <div className="font-mono text-xs text-white">
+                          <span className="text-cyan-400 font-bold">{stk.totalQuantity}</span>
+                          <span className="text-slate-500 mx-1">/</span>
+                          <span className="text-emerald-400 font-bold">{stk.soldUnits}</span>
+                          <span className="text-slate-500 mx-1">/</span>
+                          <span className="text-blue-400 font-bold">{stk.remainingUnits}</span>
+                        </div>
+                        <div className="w-24 bg-slate-950 h-1.5 rounded-full overflow-hidden mx-auto mt-1.5 border border-slate-800">
+                          <div
+                            className="bg-gradient-to-r from-cyan-500 to-emerald-400 h-full rounded-full"
+                            style={{ width: `${soldPercent}%` }}
+                          />
+                        </div>
+                        <span className="text-[9px] text-slate-500 font-mono">{soldPercent}% Sold</span>
+                      </td>
+
+                      <td className="py-3 px-3 text-right">
+                        <div className="font-mono font-bold text-rose-300">
+                          {formatPKR(stk.totalInvestmentPKR)}
+                        </div>
+                        <div className="text-[10px] text-slate-500 font-mono">
+                          @{formatPKR(stk.unitCostPKR)}/unit
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-3 text-right">
+                        <div className="font-mono font-bold text-emerald-400">
+                          {formatPKR(stk.totalRevenuePKR)}
+                        </div>
+                        <div className="text-[10px] text-slate-500 font-mono">
+                          {stk.soldUnits} unit(s) billed
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-3 text-right">
+                        <div
+                          className={`font-mono font-bold ${
+                            stk.profitPKR >= 0 ? 'text-indigo-300' : 'text-rose-400'
+                          }`}
+                        >
+                          {formatPKR(stk.profitPKR)}
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-mono">
+                          Margin: <span className={stk.profitMarginPercent >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{stk.profitMarginPercent}%</span>
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-4 text-right">
+                        <span
+                          className={`font-mono font-bold text-xs ${
+                            stk.investmentRecoveryPKR >= 0
+                              ? 'text-emerald-400'
+                              : 'text-amber-400'
+                          }`}
+                        >
+                          {stk.investmentRecoveryPKR >= 0 ? '+' : ''}
+                          {formatPKR(stk.investmentRecoveryPKR)}
+                        </span>
+                        <div className="text-[10px] text-slate-500 font-mono">
+                          {stk.investmentRecoveryPKR >= 0 ? 'Cost Recouped' : 'In Progress'}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-slate-500">
+                    <Boxes className="w-8 h-8 text-slate-600 mx-auto mb-2 opacity-50" />
+                    <p className="text-xs">No stock procurement records match your criteria.</p>
+                    <p className="text-[11px] text-slate-600 mt-0.5">
+                      Create batches in the Stock Lots module to begin tracking performance.
+                    </p>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 

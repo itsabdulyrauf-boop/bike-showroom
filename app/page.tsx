@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Header } from '@/components/Header';
 import { QuickPOS } from '@/components/QuickPOS';
+import { StockManager } from '@/components/StockManager';
 import { InventoryManager } from '@/components/InventoryManager';
 import { SalesHistory } from '@/components/SalesHistory';
 import { ExpenseTracker } from '@/components/ExpenseTracker';
@@ -42,6 +43,8 @@ export default function Home() {
     sales: 0,
     customers: 0,
     expenses: 0,
+    stocks: 0,
+    brands: 0,
     total: 0,
   });
   const [selectedSaleForInvoice, setSelectedSaleForInvoice] = useState<SaleRecord | null>(null);
@@ -234,6 +237,8 @@ export default function Home() {
           <QuickPOS key={`pos-${dataVersion}`} onSaleComplete={handleSaleComplete} settings={settings} />
         )}
 
+        {activeTab === 'stocks' && <StockManager key={`stocks-${dataVersion}`} />}
+
         {activeTab === 'inventory' && <InventoryManager key={`inv-${dataVersion}`} />}
 
         {activeTab === 'sales' && (
@@ -265,6 +270,11 @@ export default function Home() {
         onInvoiceUpdated={() => {
           setDataVersion((prev) => prev + 1);
           refreshState();
+        }}
+        onInvoiceDeleted={() => {
+          setDataVersion((prev) => prev + 1);
+          refreshState();
+          setSelectedSaleForInvoice(null);
         }}
       />
     </div>

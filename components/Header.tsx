@@ -6,6 +6,7 @@ import {
   Wifi,
   WifiOff,
   ShoppingBag,
+  Boxes,
   Package,
   Receipt,
   DollarSign,
@@ -81,6 +82,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   const tabs = [
     { id: 'pos', label: 'Quick POS', icon: ShoppingBag, color: 'text-emerald-400' },
+    { id: 'stocks', label: 'Stock Lots', icon: Boxes, color: 'text-cyan-400' },
     { id: 'inventory', label: 'Bike Inventory', icon: Package, color: 'text-blue-400' },
     { id: 'sales', label: 'Invoices & Sales', icon: Receipt, color: 'text-indigo-400' },
     { id: 'expenses', label: 'Expenses', icon: DollarSign, color: 'text-amber-400' },

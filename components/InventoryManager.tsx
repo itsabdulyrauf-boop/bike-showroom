@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { InventoryItem, BikeStatus, InventoryItemType } from '@/types';
+import { InventoryItem, BikeStatus, InventoryItemType, StockEntry, BrandItem } from '@/types';
 import { formatPKR } from '@/lib/currency';
-import { getAllInventory, saveInventoryItem, deleteInventoryItem } from '@/lib/db';
+import { getAllInventory, saveInventoryItem, deleteInventoryItem, getAllStocks, getAllBrands } from '@/lib/db';
 import { Pagination } from '@/components/Pagination';
+import { BrandManagerModal } from '@/components/BrandManagerModal';
 import {
   Package,
   Plus,
@@ -22,16 +23,22 @@ import {
   Loader2,
   Sparkles,
   AlertTriangle,
+  Boxes,
+  Tag,
 } from 'lucide-react';
 
 export const InventoryManager: React.FC = () => {
   const [items, setItems] = useState<InventoryItem[]>([]);
+  const [stocks, setStocks] = useState<StockEntry[]>([]);
+  const [brands, setBrands] = useState<BrandItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [brandFilter, setBrandFilter] = useState<string>('All');
   const [typeFilter, setTypeFilter] = useState<string>('All');
   const [statusFilter, setStatusFilter] = useState<string>('Available');
+  const [stockBatchFilter, setStockBatchFilter] = useState<string>('All');
+  const [isBrandModalOpen, setIsBrandModalOpen] = useState<boolean>(false);
 
   // Delete Confirmation Modal State
   const [itemToDelete, setItemToDelete] = useState<InventoryItem | null>(null);
@@ -43,14 +50,15 @@ export const InventoryManager: React.FC = () => {
   const [pageSize, setPageSize] = useState<number>(10);
 
   // Reset page when filter changes during render
-  const [prevFilters, setPrevFilters] = useState({ searchQuery, brandFilter, typeFilter, statusFilter });
+  const [prevFilters, setPrevFilters] = useState({ searchQuery, brandFilter, typeFilter, statusFilter, stockBatchFilter });
   if (
     prevFilters.searchQuery !== searchQuery ||
     prevFilters.brandFilter !== brandFilter ||
     prevFilters.typeFilter !== typeFilter ||
-    prevFilters.statusFilter !== statusFilter
+    prevFilters.statusFilter !== statusFilter ||
+    prevFilters.stockBatchFilter !== stockBatchFilter
   ) {
-    setPrevFilters({ searchQuery, brandFilter, typeFilter, statusFilter });
+    setPrevFilters({ searchQuery, brandFilter, typeFilter, statusFilter, stockBatchFilter });
     setCurrentPage(1);
   }
 
@@ -72,6 +80,7 @@ export const InventoryManager: React.FC = () => {
     sellingPricePKR: 0,
     stockCount: 1,
     status: 'Available' as BikeStatus,
+    stockId: '',
     notes: '',
   });
 
@@ -80,10 +89,16 @@ export const InventoryManager: React.FC = () => {
   const loadInventory = async (showLoading = false) => {
     if (showLoading) setLoading(true);
     try {
-      const data = await getAllInventory();
-      setItems(data);
+      const [invData, stocksData, brandsData] = await Promise.all([
+        getAllInventory(),
+        getAllStocks(),
+        getAllBrands(),
+      ]);
+      setItems(invData);
+      setStocks(stocksData);
+      setBrands(brandsData);
     } catch (err) {
-      console.error('Error loading inventory:', err);
+      console.error('Error loading inventory, stocks & brands:', err);
     } finally {
       setLoading(false);
     }
@@ -91,15 +106,17 @@ export const InventoryManager: React.FC = () => {
 
   useEffect(() => {
     let isMounted = true;
-    getAllInventory()
-      .then((data) => {
+    Promise.all([getAllInventory(), getAllStocks(), getAllBrands()])
+      .then(([invData, stocksData, brandsData]) => {
         if (isMounted) {
-          setItems(data);
+          setItems(invData);
+          setStocks(stocksData);
+          setBrands(brandsData);
           setLoading(false);
         }
       })
       .catch((err) => {
-        console.error('Error loading inventory:', err);
+        console.error('Error loading inventory, stocks & brands:', err);
         if (isMounted) setLoading(false);
       });
 
@@ -110,6 +127,19 @@ export const InventoryManager: React.FC = () => {
 
   const openAddModal = () => {
     setEditingItem(null);
+
+    // Latest/newest available stock selection by default
+    const sortedStocks = [...stocks].sort(
+      (a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime()
+    );
+    const activeStocks = sortedStocks.filter((s) => s.status === 'Active');
+    const defaultStock = activeStocks[0] || sortedStocks[0];
+
+    const defaultUnitCost =
+      defaultStock && defaultStock.totalQuantity > 0 && defaultStock.purchaseCostPKR > 0
+        ? Math.round(defaultStock.purchaseCostPKR / defaultStock.totalQuantity)
+        : 0;
+
     setFormData({
       itemType: 'New Bike',
       make: 'Honda',
@@ -119,10 +149,11 @@ export const InventoryManager: React.FC = () => {
       chassisNumber: '',
       engineNumber: '',
       color: '',
-      purchasePricePKR: 0,
+      purchasePricePKR: defaultUnitCost,
       sellingPricePKR: 0,
       stockCount: 1,
       status: 'Available',
+      stockId: defaultStock ? defaultStock.id : '',
       notes: '',
     });
     setFormError(null);
@@ -144,6 +175,7 @@ export const InventoryManager: React.FC = () => {
       sellingPricePKR: item.sellingPricePKR || 0,
       stockCount: item.stockCount ?? 1,
       status: item.status || 'Available',
+      stockId: item.stockId || '',
       notes: item.notes || '',
     });
     setFormError(null);
@@ -185,6 +217,8 @@ export const InventoryManager: React.FC = () => {
     setIsSubmitting(true);
 
     try {
+      const selectedStock = stocks.find((s) => s.id === formData.stockId);
+
       const newItem: InventoryItem = {
         id: editingItem ? editingItem.id : `bike_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         itemType: formData.itemType,
@@ -199,6 +233,8 @@ export const InventoryManager: React.FC = () => {
         sellingPricePKR: Number(formData.sellingPricePKR),
         stockCount: Number(formData.stockCount),
         status: formData.status,
+        stockId: formData.stockId || undefined,
+        stockBatchNumber: selectedStock ? selectedStock.batchNumber : undefined,
         notes: formData.notes,
         updatedAt: new Date().toISOString(),
         syncStatus: 'pending',
@@ -254,13 +290,18 @@ export const InventoryManager: React.FC = () => {
       item.chassisNumber.toLowerCase().includes(q) ||
       item.engineNumber.toLowerCase().includes(q) ||
       (item.itemType && item.itemType.toLowerCase().includes(q)) ||
+      (item.stockBatchNumber && item.stockBatchNumber.toLowerCase().includes(q)) ||
       item.color.toLowerCase().includes(q);
 
     const matchesBrand = brandFilter === 'All' || item.make.toLowerCase() === brandFilter.toLowerCase();
     const matchesType = typeFilter === 'All' || (item.itemType || 'New Bike') === typeFilter;
     const matchesStatus = statusFilter === 'All' || item.status === statusFilter;
+    const matchesStockBatch =
+      stockBatchFilter === 'All' ||
+      item.stockId === stockBatchFilter ||
+      item.stockBatchNumber === stockBatchFilter;
 
-    return matchesSearch && matchesBrand && matchesType && matchesStatus;
+    return matchesSearch && matchesBrand && matchesType && matchesStatus && matchesStockBatch;
   });
 
   // Pagination calculations
@@ -323,12 +364,22 @@ export const InventoryManager: React.FC = () => {
             </span>
             <p className="text-xs text-slate-300">Add New / Used Bikes or Rickshaw Bodies</p>
           </div>
-          <button
-            onClick={openAddModal}
-            className="mt-3 w-full py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20"
-          >
-            <Plus className="w-4 h-4" /> Add New Stock Record
-          </button>
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button
+              onClick={openAddModal}
+              className="py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/20 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" /> Add Bike
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsBrandModalOpen(true)}
+              className="py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 hover:text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              title="Manage Motorcycle Brands"
+            >
+              <Tag className="w-3.5 h-3.5 text-indigo-400" /> Brands ({brands.length})
+            </button>
+          </div>
         </div>
       </div>
 
@@ -368,13 +419,23 @@ export const InventoryManager: React.FC = () => {
 
         {/* Brand & Status Dropdowns */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800/80 text-xs">
-          <div className="flex items-center gap-1.5 overflow-x-auto">
-            <span className="text-slate-400 font-mono text-[11px]">Brand:</span>
-            {['All', 'Honda', 'Yamaha', 'Suzuki', 'United', 'Road Prince', 'Sazgar', 'Super Power'].map((brand) => (
+          <div className="flex items-center gap-1.5 overflow-x-auto max-w-2xl py-1">
+            <span className="text-slate-400 font-mono text-[11px] flex-shrink-0">Brand:</span>
+            {Array.from(
+              new Set([
+                'All',
+                ...brands.filter((b) => b.status === 'Active').map((b) => b.name),
+                'Honda',
+                'Yamaha',
+                'Crown',
+                'Suzuki',
+                'United',
+              ])
+            ).map((brand) => (
               <button
                 key={brand}
                 onClick={() => setBrandFilter(brand)}
-                className={`px-2 py-1 rounded-lg text-xs transition-all ${
+                className={`px-2 py-1 rounded-lg text-xs whitespace-nowrap transition-all flex-shrink-0 ${
                   brandFilter === brand
                     ? 'bg-slate-800 text-indigo-300 font-bold border border-indigo-500/40'
                     : 'text-slate-400 hover:text-slate-200'
@@ -383,9 +444,33 @@ export const InventoryManager: React.FC = () => {
                 {brand}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={() => setIsBrandModalOpen(true)}
+              className="px-2 py-1 rounded-lg text-[11px] font-medium text-indigo-400 hover:text-indigo-300 hover:bg-slate-800/60 transition-colors flex items-center gap-1 flex-shrink-0"
+              title="Add or Manage Brands"
+            >
+              <Plus className="w-3 h-3" /> Brands
+            </button>
           </div>
 
           <div className="flex items-center gap-3">
+            {stocks.length > 0 && (
+              <select
+                value={stockBatchFilter}
+                onChange={(e) => setStockBatchFilter(e.target.value)}
+                className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-indigo-300 font-mono text-xs focus:outline-none focus:border-indigo-500"
+                title="Filter by Stock Batch"
+              >
+                <option value="All">All Stock Lots</option>
+                {stocks.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    Batch {s.batchNumber} ({s.stockName})
+                  </option>
+                ))}
+              </select>
+            )}
+
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
@@ -443,6 +528,12 @@ export const InventoryManager: React.FC = () => {
                           {item.variant && (
                             <span className="block text-xs font-normal text-slate-400">
                               {item.variant}
+                            </span>
+                          )}
+                          {item.stockBatchNumber && (
+                            <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[10px] font-mono bg-indigo-950/80 text-indigo-300 border border-indigo-800/60">
+                              <Boxes className="w-2.5 h-2.5 text-indigo-400" />
+                              {item.stockBatchNumber}
                             </span>
                           )}
                         </div>
@@ -658,27 +749,123 @@ export const InventoryManager: React.FC = () => {
                 </div>
               </div>
 
+              {/* Stock Batch Assignment Selector */}
+              <div className="bg-slate-950/90 border border-indigo-900/60 rounded-xl p-3.5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-indigo-300 font-bold uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                    <Boxes className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Assign Stock / Procurement Batch</span>
+                  </label>
+                  <span className="text-[10px] text-slate-400">
+                    {editingItem ? 'Edit assigned stock' : 'Latest stock selected by default'}
+                  </span>
+                </div>
+
+                <select
+                  id="select-stock-assignment"
+                  value={formData.stockId}
+                  onChange={(e) => {
+                    const newStockId = e.target.value;
+                    const matchedStock = stocks.find((s) => s.id === newStockId);
+                    setFormData((prev) => {
+                      const shouldUpdateCost =
+                        prev.purchasePricePKR === 0 &&
+                        matchedStock &&
+                        matchedStock.totalQuantity > 0 &&
+                        matchedStock.purchaseCostPKR > 0;
+                      return {
+                        ...prev,
+                        stockId: newStockId,
+                        purchasePricePKR: shouldUpdateCost
+                          ? Math.round(matchedStock.purchaseCostPKR / matchedStock.totalQuantity)
+                          : prev.purchasePricePKR,
+                      };
+                    });
+                  }}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="">-- No Stock Assigned / Independent Procurement --</option>
+                  {stocks.map((stk) => {
+                    const unitCost =
+                      stk.totalQuantity > 0
+                        ? Math.round(stk.purchaseCostPKR / stk.totalQuantity)
+                        : 0;
+                    return (
+                      <option key={stk.id} value={stk.id}>
+                        {stk.batchNumber} - {stk.stockName} ({stk.status} • {stk.totalQuantity} units • Est. {formatPKR(unitCost)}/unit)
+                      </option>
+                    );
+                  })}
+                </select>
+
+                {(() => {
+                  const currentStock = stocks.find((s) => s.id === formData.stockId);
+                  if (!currentStock) {
+                    return (
+                      <p className="text-[10px] text-slate-500 italic">
+                        Tip: Linking to a stock batch allows automatic procurement cost tracking and stock-wise profit analytics.
+                      </p>
+                    );
+                  }
+                  const avgCost =
+                    currentStock.totalQuantity > 0
+                      ? Math.round(currentStock.purchaseCostPKR / currentStock.totalQuantity)
+                      : 0;
+                  return (
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-slate-800 text-[11px]">
+                      <span className="text-slate-300">
+                        Arrival: <strong className="text-white font-mono">{currentStock.stockDate}</strong> • Supplier:{' '}
+                        <strong className="text-slate-200">{currentStock.supplier || 'Standard'}</strong>
+                      </span>
+                      <span className="text-emerald-400 font-mono font-medium">
+                        Avg Unit Cost: {formatPKR(avgCost)}
+                      </span>
+                    </div>
+                  );
+                })()}
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-400 mb-1">Brand / Manufacturer *</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-slate-400 text-xs">Brand / Manufacturer *</label>
+                    <button
+                      type="button"
+                      onClick={() => setIsBrandModalOpen(true)}
+                      className="text-[11px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium cursor-pointer"
+                      title="Add or Manage Brands"
+                    >
+                      <Plus className="w-3 h-3" /> Add / Manage
+                    </button>
+                  </div>
                   <select
                     value={formData.make}
                     onChange={(e) => setFormData({ ...formData, make: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:border-indigo-500 font-medium"
                   >
-                    <option value="Honda">Honda</option>
-                    <option value="Yamaha">Yamaha</option>
-                    <option value="Suzuki">Suzuki</option>
-                    <option value="United">United</option>
-                    <option value="Road Prince">Road Prince</option>
-                    <option value="Super Power">Super Power</option>
-                    <option value="Sazgar">Sazgar</option>
-                    <option value="New Asia">New Asia</option>
-                    <option value="Siwa">Siwa</option>
-                    <option value="Qingqi">Qingqi</option>
-                    <option value="Crown">Crown</option>
-                    <option value="Kawasaki">Kawasaki</option>
-                    <option value="Other">Other / Custom Builder</option>
+                    {Array.from(
+                      new Set([
+                        ...(formData.make ? [formData.make] : []),
+                        ...brands.filter((b) => b.status === 'Active').map((b) => b.name),
+                        'Honda',
+                        'Yamaha',
+                        'Crown',
+                        'Suzuki',
+                        'United',
+                        'Road Prince',
+                        'Super Power',
+                        'Sazgar',
+                        'New Asia',
+                        'Siwa',
+                        'Qingqi',
+                        'Kawasaki',
+                        'Other',
+                      ])
+                    ).map((bName) => (
+                      <option key={bName} value={bName}>
+                        {bName}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -844,6 +1031,17 @@ export const InventoryManager: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Dynamic Brand Management Modal (CRUD) */}
+      <BrandManagerModal
+        isOpen={isBrandModalOpen}
+        onClose={() => setIsBrandModalOpen(false)}
+        onBrandsUpdated={loadInventory}
+        onBrandSelected={(newBrand) => {
+          setFormData((prev) => ({ ...prev, make: newBrand }));
+          setBrandFilter(newBrand);
+        }}
+      />
     </div>
   );
 };

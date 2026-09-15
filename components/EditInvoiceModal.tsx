@@ -78,6 +78,10 @@ const EditInvoiceForm: React.FC<EditInvoiceFormProps> = ({
     sale.registrationStatus || 'Showroom Registration'
   );
   const [warrantyMonths, setWarrantyMonths] = useState<number>(sale.warrantyMonths ?? 12);
+  const [letterIssued, setLetterIssued] = useState<'Yes' | 'No'>(
+    sale.letterIssued === 'Yes' ? 'Yes' : 'No'
+  );
+  const [issuanceDate, setIssuanceDate] = useState<string>(sale.issuanceDate || '');
   const [notes, setNotes] = useState<string>(sale.notes || '');
   const [syncWithInventory, setSyncWithInventory] = useState<boolean>(true);
 
@@ -151,6 +155,11 @@ const EditInvoiceForm: React.FC<EditInvoiceFormProps> = ({
         paymentStatus: calculatedPaymentStatus,
         registrationStatus,
         warrantyMonths,
+        letterIssued,
+        issuanceDate:
+          letterIssued === 'Yes'
+            ? issuanceDate || new Date().toISOString().split('T')[0]
+            : undefined,
         notes: notes.trim() || undefined,
         syncStatus: 'pending',
       };
@@ -581,6 +590,51 @@ const EditInvoiceForm: React.FC<EditInvoiceFormProps> = ({
                   <option value={12}>12 Months Warranty (Standard)</option>
                   <option value={24}>24 Months Extended Warranty</option>
                 </select>
+              </div>
+            </div>
+
+            {/* Letter Issued & Issuance Date */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div>
+                <label className="block text-slate-400 font-medium mb-1">
+                  Letter Issued
+                </label>
+                <select
+                  value={letterIssued}
+                  onChange={(e) => {
+                    const val = e.target.value as 'Yes' | 'No';
+                    setLetterIssued(val);
+                    if (val === 'Yes' && !issuanceDate) {
+                      setIssuanceDate(new Date().toISOString().split('T')[0]);
+                    }
+                  }}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="No">No</option>
+                  <option value="Yes">Yes</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-400 font-medium mb-1 flex items-center justify-between">
+                  <span>Issuance Date</span>
+                  {letterIssued !== 'Yes' && (
+                    <span className="text-[10px] text-slate-500 font-normal italic">
+                      Enabled only when Yes
+                    </span>
+                  )}
+                </label>
+                <input
+                  type="date"
+                  value={letterIssued === 'Yes' ? issuanceDate : ''}
+                  onChange={(e) => setIssuanceDate(e.target.value)}
+                  disabled={letterIssued !== 'Yes'}
+                  className={`w-full bg-slate-900 border rounded-lg px-3 py-2 text-white text-xs focus:outline-none transition-all ${
+                    letterIssued === 'Yes'
+                      ? 'border-slate-700 focus:border-indigo-500 cursor-pointer'
+                      : 'border-slate-800 opacity-40 cursor-not-allowed bg-slate-950/60 text-slate-600'
+                  }`}
+                />
               </div>
             </div>
 

@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { SaleRecord, ShowroomSettings } from '@/types';
 import { formatPKR, numberToWordsPKR } from '@/lib/currency';
+import { deleteSaleRecord } from '@/lib/db';
+import { performManualCloudSync } from '@/lib/syncEngine';
 import { EditInvoiceModal } from '@/components/EditInvoiceModal';
 import {
   Printer,
@@ -15,6 +17,10 @@ import {
   MapPin,
   Building2,
   Pencil,
+  FileCheck,
+  Trash2,
+  AlertTriangle,
+  Loader2,
 } from 'lucide-react';
 
 interface InvoiceModalProps {
@@ -22,6 +28,7 @@ interface InvoiceModalProps {
   settings: ShowroomSettings;
   onClose: () => void;
   onInvoiceUpdated?: (updatedSale: SaleRecord) => void;
+  onInvoiceDeleted?: (saleId: string) => void;
 }
 
 export const InvoiceModal: React.FC<InvoiceModalProps> = ({
@@ -29,9 +36,13 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   settings,
   onClose,
   onInvoiceUpdated,
+  onInvoiceDeleted,
 }) => {
   const [editedSale, setEditedSale] = useState<SaleRecord | null>(null);
   const [isEditOpen, setIsEditOpen] = useState<boolean>(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState<boolean>(false);
+  const [restoreStockOnDelete, setRestoreStockOnDelete] = useState<boolean>(true);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
   const currentSale =
     editedSale && sale && editedSale.id === sale.id ? editedSale : sale;
@@ -40,6 +51,27 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleDeleteInvoice = async () => {
+    if (!currentSale) return;
+    setIsDeleting(true);
+    try {
+      await deleteSaleRecord(currentSale.id, restoreStockOnDelete);
+      try {
+        await performManualCloudSync();
+      } catch (syncErr) {
+        console.warn('Sync after delete warning in modal:', syncErr);
+      }
+      setIsDeleteConfirmOpen(false);
+      onInvoiceDeleted?.(currentSale.id);
+      onClose();
+    } catch (err) {
+      console.error('Failed to delete invoice:', err);
+      alert('Error deleting invoice. Please try again.');
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const formattedDate = new Date(currentSale.createdAt).toLocaleDateString('en-PK', {
@@ -73,6 +105,14 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
             >
               <Pencil className="w-4 h-4 text-indigo-400" />
               <span>Edit Invoice</span>
+            </button>
+            <button
+              onClick={() => setIsDeleteConfirmOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-slate-750 hover:bg-rose-950/80 text-slate-300 hover:text-rose-200 border border-slate-600 hover:border-rose-700 rounded-lg text-sm font-semibold transition-all"
+              title="Delete Invoice & Sync with Firestore"
+            >
+              <Trash2 className="w-4 h-4 text-rose-400" />
+              <span className="hidden sm:inline">Delete</span>
             </button>
             <button
               onClick={handlePrint}
@@ -256,8 +296,8 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
             </div>
           </div>
 
-          {/* Registration & Warranty Badges */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 text-xs">
+          {/* Registration, Warranty & Letter Issued Badges */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6 text-xs">
             <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center gap-3">
               <Shield className="w-5 h-5 text-indigo-600 shrink-0" />
               <div>
@@ -272,6 +312,23 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
               <div>
                 <span className="font-bold text-slate-950 block">Registration Option:</span>
                 <span className="text-slate-700">{currentSale.registrationStatus}</span>
+              </div>
+            </div>
+            <div className={`p-3 border rounded-xl flex items-center gap-3 ${
+              currentSale.letterIssued === 'Yes'
+                ? 'bg-emerald-50 border-emerald-200'
+                : 'bg-slate-100 border-slate-200'
+            }`}>
+              <FileCheck className={`w-5 h-5 shrink-0 ${
+                currentSale.letterIssued === 'Yes' ? 'text-emerald-600' : 'text-slate-500'
+              }`} />
+              <div>
+                <span className="font-bold text-slate-950 block">Letter Issued:</span>
+                <span className={currentSale.letterIssued === 'Yes' ? 'text-emerald-800 font-semibold' : 'text-slate-700'}>
+                  {currentSale.letterIssued === 'Yes'
+                    ? `Yes ${currentSale.issuanceDate ? `(${currentSale.issuanceDate})` : ''}`
+                    : 'No'}
+                </span>
               </div>
             </div>
           </div>
@@ -376,6 +433,92 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
           onInvoiceUpdated?.(updatedSale);
         }}
       />
+
+      {/* Delete Invoice Confirmation Popup Modal */}
+      {isDeleteConfirmOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-slate-900 border border-rose-800/80 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-white">
+            <div className="flex items-start gap-3">
+              <div className="p-3 bg-rose-950 text-rose-400 border border-rose-800 rounded-xl shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-lg font-bold text-rose-200">
+                  Delete Invoice #{currentSale.invoiceNumber}?
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Are you sure you want to delete this invoice? It will be removed from your local database and automatically synced to Firestore Cloud.
+                </p>
+              </div>
+            </div>
+
+            {/* Sale Summary Box */}
+            <div className="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-1.5 text-xs">
+              <div className="flex justify-between text-slate-400">
+                <span>Customer:</span>
+                <span className="font-semibold text-slate-200">{currentSale.customerName}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Invoice Total:</span>
+                <span className="font-bold text-emerald-400 font-mono">
+                  {formatPKR(currentSale.totalPKR)}
+                </span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Date:</span>
+                <span className="text-slate-300 font-mono">{formattedDate}</span>
+              </div>
+              {currentSale.items && currentSale.items.length > 0 && (
+                <div className="pt-1.5 border-t border-slate-800/80 text-[11px] text-slate-400">
+                  <span className="font-semibold text-slate-300">Vehicle / Items:</span>{' '}
+                  {currentSale.items.map((it) => `${it.make} ${it.model}`).join(', ')}
+                </div>
+              )}
+            </div>
+
+            {/* Restore Stock Option */}
+            <label className="flex items-center gap-2.5 text-xs text-slate-300 cursor-pointer select-none bg-slate-950/60 p-2.5 rounded-lg border border-slate-800">
+              <input
+                type="checkbox"
+                checked={restoreStockOnDelete}
+                onChange={(e) => setRestoreStockOnDelete(e.target.checked)}
+                className="w-4 h-4 rounded text-rose-600 bg-slate-900 border-slate-700 focus:ring-rose-500"
+              />
+              <span>Restore vehicle item(s) back into Showroom Inventory stock</span>
+            </label>
+
+            {/* Action Buttons: Yes / No */}
+            <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setIsDeleteConfirmOpen(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold transition-all border border-slate-700 disabled:opacity-50"
+              >
+                No
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleDeleteInvoice}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-rose-900/50 disabled:opacity-50"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Deleting & Syncing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Yes</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

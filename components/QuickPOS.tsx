@@ -10,14 +10,17 @@ import {
   RegistrationStatus,
   ShowroomSettings,
   InventoryItemType,
+  BrandItem,
 } from '@/types';
 import { formatPKR } from '@/lib/currency';
 import {
   getAllInventory,
   getAllCustomers,
+  getAllBrands,
   saveSaleRecord,
   saveInventoryItem,
 } from '@/lib/db';
+import { BrandManagerModal } from '@/components/BrandManagerModal';
 import {
   ShoppingBag,
   User,
@@ -35,6 +38,7 @@ import {
   UserPlus,
   Loader2,
   Pencil,
+  Tag,
 } from 'lucide-react';
 
 interface QuickPOSProps {
@@ -54,6 +58,8 @@ export const QuickPOS: React.FC<QuickPOSProps> = ({ onSaleComplete, settings }) 
   // Data Sources
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [customers, setCustomers] = useState<CustomerItem[]>([]);
+  const [brands, setBrands] = useState<BrandItem[]>([]);
+  const [isBrandModalOpen, setIsBrandModalOpen] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
 
   // Customer Selection State
@@ -96,22 +102,27 @@ export const QuickPOS: React.FC<QuickPOSProps> = ({ onSaleComplete, settings }) 
   const [warrantyMonths, setWarrantyMonths] = useState<number>(12);
   const [registrationStatus, setRegistrationStatus] =
     useState<RegistrationStatus>('Showroom Registration');
+  const [letterIssued, setLetterIssued] = useState<'Yes' | 'No'>('No');
+  const [issuanceDate, setIssuanceDate] = useState<string>('');
   const [saleNotes, setSaleNotes] = useState<string>('');
   const [syncPriceWithInventory, setSyncPriceWithInventory] = useState<boolean>(true);
 
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Load Inventory & Customers
+  // Load Inventory, Customers & Dynamic Brands
   const loadData = async (showLoading = false) => {
     if (showLoading) setLoading(true);
     try {
-      const invData = await getAllInventory();
+      const [invData, custData, brandsData] = await Promise.all([
+        getAllInventory(),
+        getAllCustomers(),
+        getAllBrands(),
+      ]);
       const availableInv = invData.filter((i) => i.status === 'Available' && i.stockCount > 0);
       setInventory(availableInv);
-
-      const custData = await getAllCustomers();
       setCustomers(custData);
+      setBrands(brandsData);
     } catch (err) {
       console.error('Error loading POS data:', err);
     } finally {
@@ -121,12 +132,13 @@ export const QuickPOS: React.FC<QuickPOSProps> = ({ onSaleComplete, settings }) 
 
   useEffect(() => {
     let isMounted = true;
-    Promise.all([getAllInventory(), getAllCustomers()])
-      .then(([invData, custData]) => {
+    Promise.all([getAllInventory(), getAllCustomers(), getAllBrands()])
+      .then(([invData, custData, brandsData]) => {
         if (isMounted) {
           const availableInv = invData.filter((i) => i.status === 'Available' && i.stockCount > 0);
           setInventory(availableInv);
           setCustomers(custData);
+          setBrands(brandsData);
           setLoading(false);
         }
       })
@@ -355,6 +367,11 @@ export const QuickPOS: React.FC<QuickPOSProps> = ({ onSaleComplete, settings }) 
         accountNumber: accountNumber.trim() || undefined,
         warrantyMonths,
         registrationStatus,
+        letterIssued,
+        issuanceDate:
+          letterIssued === 'Yes'
+            ? issuanceDate || new Date().toISOString().split('T')[0]
+            : undefined,
         notes: saleNotes,
         createdAt: new Date().toISOString(),
         syncStatus: 'pending',
@@ -399,6 +416,8 @@ export const QuickPOS: React.FC<QuickPOSProps> = ({ onSaleComplete, settings }) 
       setPaidAmountPKR(0);
       setAccountNumber('');
       setSaleNotes('');
+      setLetterIssued('No');
+      setIssuanceDate('');
     } catch (err: any) {
       console.error('Checkout error:', err);
       setFormError('Failed to complete transaction: ' + err.message);
@@ -742,71 +761,70 @@ export const QuickPOS: React.FC<QuickPOSProps> = ({ onSaleComplete, settings }) 
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-slate-400 mb-1">Make / Manufacturer *</label>
-                    <select
-                      value={[
-                        'Honda',
-                        'Yamaha',
-                        'Suzuki',
-                        'United',
-                        'Road Prince',
-                        'Super Power',
-                        'Sazgar',
-                        'New Asia',
-                        'Qingqi',
-                        'Siwa',
-                        'Crown',
-                        'Unique',
-                        'Kawasaki',
-                        'Hi-Speed',
-                      ].includes(customBike.make) ? customBike.make : 'Other'}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setCustomBike({ ...customBike, make: val });
-                      }}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:border-indigo-500 cursor-pointer"
-                    >
-                      <option value="Honda">Honda</option>
-                      <option value="Yamaha">Yamaha</option>
-                      <option value="Suzuki">Suzuki</option>
-                      <option value="United">United</option>
-                      <option value="Road Prince">Road Prince</option>
-                      <option value="Super Power">Super Power</option>
-                      <option value="Sazgar">Sazgar</option>
-                      <option value="New Asia">New Asia</option>
-                      <option value="Qingqi">Qingqi</option>
-                      <option value="Siwa">Siwa</option>
-                      <option value="Crown">Crown</option>
-                      <option value="Unique">Unique</option>
-                      <option value="Kawasaki">Kawasaki</option>
-                      <option value="Hi-Speed">Hi-Speed</option>
-                      <option value="Other">Other / Custom Builder</option>
-                    </select>
-                    {![
-                      'Honda',
-                      'Yamaha',
-                      'Suzuki',
-                      'United',
-                      'Road Prince',
-                      'Super Power',
-                      'Sazgar',
-                      'New Asia',
-                      'Qingqi',
-                      'Siwa',
-                      'Crown',
-                      'Unique',
-                      'Kawasaki',
-                      'Hi-Speed',
-                    ].includes(customBike.make) && (
-                      <input
-                        type="text"
-                        value={customBike.make === 'Other' ? '' : customBike.make}
-                        onChange={(e) => setCustomBike({ ...customBike, make: e.target.value })}
-                        placeholder="Type custom manufacturer name..."
-                        className="mt-1.5 w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-white focus:border-indigo-500"
-                        required
-                      />
-                    )}
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-slate-400 text-xs">Make / Manufacturer *</label>
+                      <button
+                        type="button"
+                        onClick={() => setIsBrandModalOpen(true)}
+                        className="text-[11px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium cursor-pointer"
+                        title="Add or Manage Brands"
+                      >
+                        <Plus className="w-3 h-3" /> Add / Manage
+                      </button>
+                    </div>
+                    {(() => {
+                      const activeBrandList = Array.from(
+                        new Set([
+                          ...brands.filter((b) => b.status === 'Active').map((b) => b.name),
+                          'Honda',
+                          'Yamaha',
+                          'Crown',
+                          'Suzuki',
+                          'United',
+                          'Road Prince',
+                          'Super Power',
+                          'Sazgar',
+                          'New Asia',
+                          'Qingqi',
+                          'Siwa',
+                          'Unique',
+                          'Kawasaki',
+                          'Hi-Speed',
+                        ])
+                      );
+                      const isPredefined = activeBrandList.includes(customBike.make);
+                      const selectedVal = isPredefined ? customBike.make : 'Other';
+
+                      return (
+                        <>
+                          <select
+                            value={selectedVal}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setCustomBike({ ...customBike, make: val === 'Other' ? '' : val });
+                            }}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:border-indigo-500 cursor-pointer text-sm font-medium"
+                          >
+                            {activeBrandList.map((bName) => (
+                              <option key={bName} value={bName}>
+                                {bName}
+                              </option>
+                            ))}
+                            <option value="Other">Other / Custom Builder</option>
+                          </select>
+                          {selectedVal === 'Other' && (
+                            <input
+                              type="text"
+                              value={customBike.make === 'Other' ? '' : customBike.make}
+                              onChange={(e) => setCustomBike({ ...customBike, make: e.target.value })}
+                              placeholder="Type custom manufacturer name (e.g. Crown, Metro)..."
+                              className="mt-1.5 w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-white focus:border-indigo-500 text-sm"
+                              required
+                            />
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                   <div>
                     <label className="block text-slate-400 mb-1">
@@ -1131,6 +1149,46 @@ export const QuickPOS: React.FC<QuickPOSProps> = ({ onSaleComplete, settings }) 
                 </div>
               </div>
 
+              {/* Letter Issued & Issuance Date */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-slate-400 mb-1 font-medium">Letter Issued</label>
+                  <select
+                    value={letterIssued}
+                    onChange={(e) => {
+                      const val = e.target.value as 'Yes' | 'No';
+                      setLetterIssued(val);
+                      if (val === 'Yes' && !issuanceDate) {
+                        setIssuanceDate(new Date().toISOString().split('T')[0]);
+                      }
+                    }}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white focus:border-indigo-500 focus:outline-none"
+                  >
+                    <option value="No">No</option>
+                    <option value="Yes">Yes</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-slate-400 mb-1 font-medium flex items-center justify-between">
+                    <span>Issuance Date</span>
+                    {letterIssued !== 'Yes' && (
+                      <span className="text-[10px] text-slate-500 font-normal italic">Disabled</span>
+                    )}
+                  </label>
+                  <input
+                    type="date"
+                    value={letterIssued === 'Yes' ? issuanceDate : ''}
+                    onChange={(e) => setIssuanceDate(e.target.value)}
+                    disabled={letterIssued !== 'Yes'}
+                    className={`w-full bg-slate-950 border rounded-lg px-2.5 py-1.5 text-white text-xs focus:outline-none transition-all ${
+                      letterIssued === 'Yes'
+                        ? 'border-indigo-500/80 focus:border-indigo-400 cursor-pointer'
+                        : 'border-slate-800/60 opacity-40 cursor-not-allowed bg-slate-950/40 text-slate-500'
+                    }`}
+                  />
+                </div>
+              </div>
+
               <div>
                 <label className="block text-slate-400 mb-1">Sale Reference / Notes</label>
                 <input
@@ -1172,6 +1230,16 @@ export const QuickPOS: React.FC<QuickPOSProps> = ({ onSaleComplete, settings }) 
         </div>
 
       </div>
+
+      {/* Dynamic Brand Management Modal (CRUD) */}
+      <BrandManagerModal
+        isOpen={isBrandModalOpen}
+        onClose={() => setIsBrandModalOpen(false)}
+        onBrandsUpdated={loadData}
+        onBrandSelected={(newBrand) => {
+          setCustomBike((prev) => ({ ...prev, make: newBrand }));
+        }}
+      />
     </div>
   );
 };

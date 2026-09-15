@@ -6,10 +6,12 @@ import {
   getAllSales,
   getAllCustomers,
   getAllExpenses,
+  getAllStocks,
+  getAllBrands,
   getShowroomSettings,
 } from './db';
 import { getAuthCredentials } from './authService';
-import { InventoryItem, SaleRecord, CustomerItem, ExpenseRecord, ShowroomSettings } from '@/types';
+import { InventoryItem, SaleRecord, CustomerItem, ExpenseRecord, StockEntry, BrandItem, ShowroomSettings } from '@/types';
 
 export interface SyncResult {
   success: boolean;
@@ -18,6 +20,8 @@ export interface SyncResult {
     sales: number;
     customers: number;
     expenses: number;
+    stocks: number;
+    brands: number;
     settings: number;
   };
   errors: string[];
@@ -40,6 +44,8 @@ export async function syncAllDataWithFirebase(options?: { forceUploadAll?: boole
       sales: 0,
       customers: 0,
       expenses: 0,
+      stocks: 0,
+      brands: 0,
       settings: 0,
     },
     errors: [],
@@ -286,7 +292,107 @@ export async function syncAllDataWithFirebase(options?: { forceUploadAll?: boole
     addWarn(`Expenses sync error: ${err?.message}`);
   }
 
-  // 5. SHOWROOM SETTINGS & AUTH CREDENTIALS SYNC
+  // 5. STOCKS SYNC (Local -> Cloud, then Cloud -> Local)
+  try {
+    const localStocks = await getAllStocks();
+    addLog(`Processing ${localStocks.length} local stock entries...`);
+
+    for (const stock of localStocks) {
+      if (options?.forceUploadAll || stock.syncStatus === 'pending' || !stock.syncStatus) {
+        try {
+          const stockToSync = { ...stock, syncStatus: 'synced' as const };
+          const docRef = doc(firestore, 'stocks', stock.id);
+          await setDoc(docRef, sanitizeForFirestore(stockToSync), { merge: true });
+
+          stock.syncStatus = 'synced';
+          await localDb.put('stocks', stock);
+          result.syncedCounts.stocks++;
+          addLog(`Uploaded Stock Entry: ${stock.batchNumber} - ${stock.stockName} (${stock.id})`);
+        } catch (err: any) {
+          stock.syncStatus = 'pending';
+          await localDb.put('stocks', stock);
+          const errStr = err?.message || String(err);
+          addWarn(`Stock upload warning for ${stock.id}: ${errStr}`);
+          if (!result.errors.includes(errStr)) result.errors.push(`Stock ${stock.id}: ${errStr}`);
+        }
+      }
+    }
+
+    // Pull remote stocks from Cloud
+    try {
+      const stocksSnap = await getDocs(collection(firestore, 'stocks'));
+      let pulledCount = 0;
+      for (const docSnap of stocksSnap.docs) {
+        const remoteStock = docSnap.data() as StockEntry;
+        const id = docSnap.id || remoteStock.id;
+        const localStock = await localDb.get('stocks', id);
+
+        if (!localStock || (remoteStock.updatedAt && (!localStock.updatedAt || new Date(remoteStock.updatedAt) > new Date(localStock.updatedAt)))) {
+          await localDb.put('stocks', { ...remoteStock, id, syncStatus: 'synced' });
+          pulledCount++;
+        }
+      }
+      if (pulledCount > 0) {
+        addLog(`Downloaded ${pulledCount} stock batch records from Firebase.`);
+      }
+    } catch (e: any) {
+      addWarn(`Remote stocks pull warning: ${e?.message}`);
+    }
+  } catch (err: any) {
+    addWarn(`Stocks sync error: ${err?.message}`);
+  }
+
+  // 6. BRANDS SYNC (Local -> Cloud, then Cloud -> Local)
+  try {
+    const localBrands = await getAllBrands();
+    addLog(`Processing ${localBrands.length} dynamic vehicle brands...`);
+
+    for (const brand of localBrands) {
+      if (options?.forceUploadAll || brand.syncStatus === 'pending' || !brand.syncStatus) {
+        try {
+          const brandToSync = { ...brand, syncStatus: 'synced' as const };
+          const docRef = doc(firestore, 'brands', brand.id);
+          await setDoc(docRef, sanitizeForFirestore(brandToSync), { merge: true });
+
+          brand.syncStatus = 'synced';
+          await localDb.put('brands', brand);
+          result.syncedCounts.brands++;
+          addLog(`Uploaded Brand: ${brand.name} (${brand.id})`);
+        } catch (err: any) {
+          brand.syncStatus = 'pending';
+          await localDb.put('brands', brand);
+          const errStr = err?.message || String(err);
+          addWarn(`Brand upload warning for ${brand.id}: ${errStr}`);
+          if (!result.errors.includes(errStr)) result.errors.push(`Brand ${brand.id}: ${errStr}`);
+        }
+      }
+    }
+
+    // Pull remote brands from Cloud
+    try {
+      const brandsSnap = await getDocs(collection(firestore, 'brands'));
+      let pulledCount = 0;
+      for (const docSnap of brandsSnap.docs) {
+        const remoteBrand = docSnap.data() as BrandItem;
+        const id = docSnap.id || remoteBrand.id;
+        const localBrand = await localDb.get('brands', id);
+
+        if (!localBrand || (remoteBrand.updatedAt && (!localBrand.updatedAt || new Date(remoteBrand.updatedAt) > new Date(localBrand.updatedAt)))) {
+          await localDb.put('brands', { ...remoteBrand, id, syncStatus: 'synced' });
+          pulledCount++;
+        }
+      }
+      if (pulledCount > 0) {
+        addLog(`Downloaded ${pulledCount} brand records from Firebase.`);
+      }
+    } catch (e: any) {
+      addWarn(`Remote brands pull warning: ${e?.message}`);
+    }
+  } catch (err: any) {
+    addWarn(`Brands sync error: ${err?.message}`);
+  }
+
+  // 7. SHOWROOM SETTINGS & AUTH CREDENTIALS SYNC
   try {
     const settings = await getShowroomSettings();
     if (settings) {

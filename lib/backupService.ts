@@ -6,22 +6,26 @@ import {
   getAllSales,
   getAllCustomers,
   getAllExpenses,
+  getAllStocks,
+  getAllBrands,
   getShowroomSettings,
   saveShowroomSettings,
 } from './db';
 import { getAuthCredentials, saveAuthCredentials } from './authService';
-import { DatabaseBackup, InventoryItem, SaleRecord, CustomerItem, ExpenseRecord } from '@/types';
+import { DatabaseBackup, InventoryItem, SaleRecord, CustomerItem, ExpenseRecord, StockEntry, BrandItem } from '@/types';
 
 /**
  * Creates a complete JSON backup object of all database collections.
  */
 export async function createFullDatabaseBackup(): Promise<DatabaseBackup> {
-  const [settings, inventory, sales, customers, expenses, authCreds] = await Promise.all([
+  const [settings, inventory, sales, customers, expenses, stocks, brands, authCreds] = await Promise.all([
     getShowroomSettings(),
     getAllInventory(),
     getAllSales(),
     getAllCustomers(),
     getAllExpenses(),
+    getAllStocks(),
+    getAllBrands(),
     getAuthCredentials(),
   ]);
 
@@ -29,6 +33,8 @@ export async function createFullDatabaseBackup(): Promise<DatabaseBackup> {
     version: '1.0',
     backupDate: new Date().toISOString(),
     showroomSettings: settings,
+    brands,
+    stocks,
     inventory,
     sales,
     customers,
@@ -65,12 +71,12 @@ export async function restoreDatabaseBackupJSON(
 ): Promise<{
   success: boolean;
   message: string;
-  importedCounts: { inventory: number; sales: number; customers: number; expenses: number };
+  importedCounts: { inventory: number; sales: number; customers: number; expenses: number; stocks: number; brands?: number };
 }> {
   const firestore = getFirestoreDb();
   const localDb = await getLocalDB();
 
-  const counts = { inventory: 0, sales: 0, customers: 0, expenses: 0 };
+  const counts = { inventory: 0, sales: 0, customers: 0, expenses: 0, stocks: 0, brands: 0 };
 
   if (!backupJSON || typeof backupJSON !== 'object') {
     return {
@@ -87,9 +93,11 @@ export async function restoreDatabaseBackupJSON(
       await localDb.clear('sales');
       await localDb.clear('customers');
       await localDb.clear('expenses');
+      await localDb.clear('stocks');
+      await localDb.clear('brands');
 
       if (firestore) {
-        const collectionsToClear = ['inventory', 'sales', 'customers', 'expenses'];
+        const collectionsToClear = ['inventory', 'sales', 'customers', 'expenses', 'stocks', 'brands'];
         for (const col of collectionsToClear) {
           try {
             const snap = await getDocs(collection(firestore, col));
@@ -223,6 +231,8 @@ export async function restoreDatabaseBackupJSON(
           paymentStatus: (rawSale.paymentStatus as any) || (balancePKR <= 0 ? 'Paid' : 'Partial'),
           warrantyMonths: Number(rawSale.warrantyMonths) || 12,
           registrationStatus: (rawSale.registrationStatus as any) || 'Self-Registration',
+          letterIssued: (rawSale.letterIssued as any) || 'No',
+          issuanceDate: rawSale.issuanceDate ? String(rawSale.issuanceDate) : undefined,
           notes: rawSale.notes ? String(rawSale.notes) : '',
           createdAt: rawSale.createdAt || new Date().toISOString(),
           syncStatus: 'synced',
@@ -298,9 +308,69 @@ export async function restoreDatabaseBackupJSON(
       }
     }
 
+    // 6. Stocks
+    const stocksList = Array.isArray(backupJSON.stocks) ? backupJSON.stocks : [];
+    for (const rawStock of stocksList) {
+      if (rawStock && typeof rawStock === 'object') {
+        const id = rawStock.id || `stk_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+        const cleanStock: StockEntry = {
+          id: String(id),
+          batchNumber: String(rawStock.batchNumber || `STK-${Date.now().toString().slice(-4)}`),
+          stockName: String(rawStock.stockName || 'Incoming Stock'),
+          stockDate: String(rawStock.stockDate || new Date().toISOString().split('T')[0]),
+          status: (rawStock.status as any) || 'Active',
+          totalQuantity: Number(rawStock.totalQuantity) || 1,
+          purchaseCostPKR: Number(rawStock.purchaseCostPKR) || 0,
+          supplier: rawStock.supplier ? String(rawStock.supplier) : undefined,
+          notes: rawStock.notes ? String(rawStock.notes) : undefined,
+          createdAt: rawStock.createdAt || new Date().toISOString(),
+          updatedAt: rawStock.updatedAt || new Date().toISOString(),
+          syncStatus: 'synced',
+        };
+
+        await localDb.put('stocks', cleanStock);
+        if (firestore) {
+          try {
+            await setDoc(doc(firestore, 'stocks', cleanStock.id), sanitizeForFirestore(cleanStock), { merge: true });
+          } catch (e) {
+            console.warn('Firestore setDoc stocks error:', e);
+          }
+        }
+        counts.stocks++;
+      }
+    }
+
+    // 7. Brands
+    const brandsList = Array.isArray(backupJSON.brands) ? backupJSON.brands : [];
+    for (const rawBrand of brandsList) {
+      if (rawBrand && typeof rawBrand === 'object' && rawBrand.name) {
+        const id = rawBrand.id || `brand_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+        const cleanBrand: BrandItem = {
+          id: String(id),
+          name: String(rawBrand.name).trim(),
+          country: rawBrand.country ? String(rawBrand.country) : undefined,
+          description: rawBrand.description ? String(rawBrand.description) : undefined,
+          status: (rawBrand.status as any) || 'Active',
+          createdAt: rawBrand.createdAt || new Date().toISOString(),
+          updatedAt: rawBrand.updatedAt || new Date().toISOString(),
+          syncStatus: 'synced',
+        };
+
+        await localDb.put('brands', cleanBrand);
+        if (firestore) {
+          try {
+            await setDoc(doc(firestore, 'brands', cleanBrand.id), sanitizeForFirestore(cleanBrand), { merge: true });
+          } catch (e) {
+            console.warn('Firestore setDoc brands error:', e);
+          }
+        }
+        counts.brands++;
+      }
+    }
+
     return {
       success: true,
-      message: `Database successfully restored! Imported ${counts.inventory} bikes, ${counts.sales} sales, ${counts.customers} customers, and ${counts.expenses} expenses.`,
+      message: `Database successfully restored! Imported ${counts.brands} vehicle brands, ${counts.stocks} stock batches, ${counts.inventory} bikes, ${counts.sales} sales, ${counts.customers} customers, and ${counts.expenses} expenses.`,
       importedCounts: counts,
     };
   } catch (err: any) {
@@ -362,4 +432,13 @@ export async function exportExpensesCSV(): Promise<void> {
     csv += `"${e.id}","${e.title}","${e.category}",${e.amountPKR},"${e.date}","${e.paymentMethod}"\n`;
   }
   downloadCSV(csv, `Expenses_${new Date().toISOString().split('T')[0]}.csv`);
+}
+
+export async function exportBrandsCSV(): Promise<void> {
+  const brands = await getAllBrands();
+  let csv = 'ID,Name,Country,Status,Description,CreatedAt\n';
+  for (const b of brands) {
+    csv += `"${b.id}","${b.name}","${b.country || ''}","${b.status}","${(b.description || '').replace(/"/g, '""')}","${b.createdAt}"\n`;
+  }
+  downloadCSV(csv, `Brands_${new Date().toISOString().split('T')[0]}.csv`);
 }
