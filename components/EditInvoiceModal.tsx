@@ -548,7 +548,6 @@ const EditInvoiceForm: React.FC<EditInvoiceFormProps> = ({
                               >
                                 <span>Assign Stock / Product Lot</span>
                                 <span className="text-[10px] text-indigo-300 font-normal font-mono">
-                                  (Kis Stock Lot Sy Hai)
                                 </span>
                               </label>
                               <span className="text-[10px] text-slate-400">
