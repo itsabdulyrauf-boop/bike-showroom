@@ -507,7 +507,6 @@ export const InventoryManager: React.FC = () => {
                 <th className="p-4">Engine / Motor #</th>
                 <th className="p-4">Color / Year</th>
                 <th className="p-4 text-right">Selling Rate (PKR)</th>
-                <th className="p-4 text-center">Stock Quantity</th>
                 <th className="p-4 text-center">Status</th>
                 <th className="p-4 text-right">Actions</th>
               </tr>
@@ -589,14 +588,6 @@ export const InventoryManager: React.FC = () => {
                       <td className="p-4 text-right font-mono font-bold text-emerald-400 text-sm">
                         {formatPKR(item.sellingPricePKR)}
                       </td>
-                      <td className="p-4 text-center font-mono font-bold">
-                        <div className="flex items-center justify-center">
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-800/90 border border-slate-700 rounded-lg text-slate-200">
-                            <span className="font-mono text-sm font-bold text-white">{item.stockCount}</span>
-                            <span className="text-[10px] text-slate-400 font-normal hidden sm:inline">Units</span>
-                          </span>
-                        </div>
-                      </td>
                       <td className="p-4 text-center">
                         <span
                           className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
@@ -635,7 +626,7 @@ export const InventoryManager: React.FC = () => {
                 })
               ) : (
                 <tr>
-                  <td colSpan={10} className="p-8 text-center text-slate-500 text-xs">
+                  <td colSpan={9} className="p-8 text-center text-slate-500 text-xs">
                     No items matching your search or filters. Click &quot;+ Add New Stock Record&quot; above to create one.
                   </td>
                 </tr>

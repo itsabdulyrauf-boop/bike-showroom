@@ -24,7 +24,6 @@ import {
   AlertCircle,
   Save,
   Loader2,
-  Boxes,
   Layers,
 } from 'lucide-react';
 
@@ -90,10 +89,9 @@ const EditInvoiceForm: React.FC<EditInvoiceFormProps> = ({
   const [notes, setNotes] = useState<string>(sale.notes || '');
   const [syncWithInventory, setSyncWithInventory] = useState<boolean>(true);
 
-  // Showroom Inventory & Stock synchronization state
+  // Showroom Inventory & Stock list
   const [inventoryList, setInventoryList] = useState<InventoryItem[]>([]);
   const [stockList, setStockList] = useState<StockEntry[]>([]);
-  const [inventoryStockCounts, setInventoryStockCounts] = useState<Record<string, number>>({});
 
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -105,26 +103,13 @@ const EditInvoiceForm: React.FC<EditInvoiceFormProps> = ({
         if (!active) return;
         setInventoryList(invs);
         setStockList(stks);
-
-        const initialStockCounts: Record<string, number> = {};
-        for (const it of sale.items) {
-          const matched = invs.find(
-            (b) =>
-              (it.bikeId && b.id === it.bikeId) ||
-              (it.chassisNumber && b.chassisNumber === it.chassisNumber)
-          );
-          if (matched) {
-            initialStockCounts[matched.id] = matched.stockCount;
-          }
-        }
-        setInventoryStockCounts(initialStockCounts);
       })
-      .catch((err) => console.warn('Could not load inventory in EditInvoiceModal:', err));
+      .catch((err) => console.warn('Could not load inventory/stocks in EditInvoiceModal:', err));
 
     return () => {
       active = false;
     };
-  }, [sale]);
+  }, []);
 
   const handleUpdateItemField = (
     index: number,
@@ -234,7 +219,7 @@ const EditInvoiceForm: React.FC<EditInvoiceFormProps> = ({
         syncStatus: 'pending',
       };
 
-      // Synchronize showroom stock quantity and rates
+      // Synchronize showroom inventory stock lot assignment (and selling price if opted)
       try {
         const allInv = await getAllInventory();
         for (const sItem of finalItems) {
@@ -245,25 +230,23 @@ const EditInvoiceForm: React.FC<EditInvoiceFormProps> = ({
           );
 
           if (matched) {
-            const hasStockEdit = inventoryStockCounts[matched.id] !== undefined;
-            const newStockCount = hasStockEdit
-              ? inventoryStockCounts[matched.id]
-              : matched.stockCount;
             const newSellingPrice =
               syncWithInventory && sItem.pricePKR > 0
                 ? sItem.pricePKR
                 : matched.sellingPricePKR;
 
             const shouldUpdate =
-              hasStockEdit ||
-              newStockCount !== matched.stockCount ||
+              matched.stockId !== sItem.stockId ||
+              matched.stockBatchNumber !== sItem.stockBatchNumber ||
+              matched.stockName !== sItem.stockName ||
               newSellingPrice !== matched.sellingPricePKR;
 
             if (shouldUpdate) {
               await saveInventoryItem({
                 ...matched,
-                stockCount: newStockCount,
-                status: newStockCount > 0 ? 'Available' : 'Sold',
+                stockId: sItem.stockId,
+                stockBatchNumber: sItem.stockBatchNumber,
+                stockName: sItem.stockName,
                 sellingPricePKR: newSellingPrice,
                 updatedAt: new Date().toISOString(),
                 syncStatus: 'pending',
@@ -272,7 +255,7 @@ const EditInvoiceForm: React.FC<EditInvoiceFormProps> = ({
           }
         }
       } catch (invErr) {
-        console.warn('Could not sync stock or rates with showroom inventory:', invErr);
+        console.warn('Could not sync stock assignment or rates with showroom inventory:', invErr);
       }
 
       await saveSaleRecord(updatedSale);
@@ -542,51 +525,67 @@ const EditInvoiceForm: React.FC<EditInvoiceFormProps> = ({
                       </div>
                     </div>
 
-                    {/* Showroom Inventory Stock Update Field */}
-                    {matchedBike && (
-                      <div className="pt-2.5 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2.5 bg-slate-950/50 p-2.5 rounded-lg">
-                        <div className="flex items-center gap-2">
-                          <div className="p-1.5 bg-indigo-950/80 text-indigo-400 rounded-md border border-indigo-800/60">
-                            <Boxes className="w-4 h-4" />
+                    {/* Stock Lot Dropdown Selector */}
+                    {(() => {
+                      const currentStockId =
+                        item.stockId ||
+                        (item.stockBatchNumber
+                          ? stockList.find((s) => s.batchNumber === item.stockBatchNumber)?.id
+                          : undefined) ||
+                        matchedBike?.stockId ||
+                        '';
+
+                      return (
+                        <div className="pt-2.5 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-950/70 p-3 rounded-xl border border-slate-800/80">
+                          <div className="flex items-center gap-2.5">
+                            <div className="p-2 bg-indigo-950 text-indigo-400 rounded-lg border border-indigo-800/60 shrink-0">
+                              <Layers className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <label
+                                htmlFor={`item-stock-dropdown-${idx}`}
+                                className="text-xs font-bold text-white flex items-center gap-1.5"
+                              >
+                                <span>Assign Stock / Product Lot</span>
+                                <span className="text-[10px] text-indigo-300 font-normal font-mono">
+                                  (Kis Stock Lot Sy Hai)
+                                </span>
+                              </label>
+                              <span className="text-[10px] text-slate-400">
+                                Select procurement batch / stock lot for this bike
+                              </span>
+                            </div>
                           </div>
-                          <div>
-                            <span className="text-xs font-bold text-white block">
-                              Showroom Inventory Available Stock
-                            </span>
-                            <span className="text-[10px] text-slate-400">
-                              Current in Showroom:{' '}
-                              <strong className="text-emerald-400 font-mono">
-                                {matchedBike.stockCount} Units
-                              </strong>
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <label className="text-xs text-slate-300 font-medium">Update Showroom Units:</label>
-                          <div className="flex items-center gap-1.5">
-                            <input
-                              type="number"
-                              min="0"
-                              max="9999"
-                              value={
-                                inventoryStockCounts[matchedBike.id] !== undefined
-                                  ? inventoryStockCounts[matchedBike.id]
-                                  : matchedBike.stockCount
-                              }
+
+                          <div className="w-full sm:w-auto min-w-[280px]">
+                            <select
+                              id={`item-stock-dropdown-${idx}`}
+                              value={currentStockId}
                               onChange={(e) => {
-                                const val = Math.max(0, parseInt(e.target.value, 10) || 0);
-                                setInventoryStockCounts((prev) => ({
-                                  ...prev,
-                                  [matchedBike.id]: val,
-                                }));
+                                const selectedId = e.target.value;
+                                const matchedStock = stockList.find((s) => s.id === selectedId);
+                                const updated = [...items];
+                                updated[idx] = {
+                                  ...updated[idx],
+                                  stockId: matchedStock ? matchedStock.id : undefined,
+                                  stockBatchNumber: matchedStock ? matchedStock.batchNumber : undefined,
+                                  stockName: matchedStock ? matchedStock.stockName : undefined,
+                                };
+                                setItems(updated);
                               }}
-                              className="w-24 bg-slate-900 border border-indigo-700/70 rounded-lg px-2.5 py-1 text-center font-mono font-bold text-indigo-300 text-xs focus:outline-none focus:border-indigo-500"
-                            />
-                            <span className="text-xs text-slate-400 font-mono">Units</span>
+                              className="w-full bg-slate-900 border border-indigo-700/60 rounded-lg px-3 py-2 font-mono text-xs text-indigo-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                            >
+                              <option value="">-- No Stock Assigned / General Stock --</option>
+                              {stockList.map((stk) => (
+                                <option key={stk.id} value={stk.id}>
+                                  {stk.stockName} (Lot #{stk.batchNumber})
+                                </option>
+                              ))}
+                            </select>
                           </div>
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 );
               })}
