@@ -7,7 +7,6 @@ import { deleteSaleRecord } from '@/lib/db';
 import { performManualCloudSync } from '@/lib/syncEngine';
 import { EditInvoiceModal } from '@/components/EditInvoiceModal';
 import { UpdateLetterModal } from '@/components/UpdateLetterModal';
-import { InvoiceStockUpdateModal } from '@/components/InvoiceStockUpdateModal';
 import {
   Printer,
   X,
@@ -23,7 +22,6 @@ import {
   Trash2,
   AlertTriangle,
   Loader2,
-  Boxes,
 } from 'lucide-react';
 
 interface InvoiceModalProps {
@@ -47,7 +45,6 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   const [restoreStockOnDelete, setRestoreStockOnDelete] = useState<boolean>(true);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [isLetterModalOpen, setIsLetterModalOpen] = useState<boolean>(false);
-  const [isStockModalOpen, setIsStockModalOpen] = useState<boolean>(false);
 
   const currentSale =
     editedSale && sale && editedSale.id === sale.id ? editedSale : sale;
@@ -112,17 +109,9 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
               <span>{currentSale.letterIssued === 'Yes' ? 'Update Letter' : 'Add Letter'}</span>
             </button>
             <button
-              onClick={() => setIsStockModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-2 bg-slate-750 hover:bg-indigo-950/80 text-slate-200 hover:text-indigo-300 border border-slate-600 hover:border-indigo-500 rounded-lg text-sm font-semibold transition-all cursor-pointer"
-              title="Update stock quantities and synchronize with inventory"
-            >
-              <Boxes className="w-4 h-4 text-indigo-400" />
-              <span>Update Stock</span>
-            </button>
-            <button
               onClick={() => setIsEditOpen(true)}
               className="flex items-center gap-1.5 px-3 py-2 bg-slate-750 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-600 rounded-lg text-sm font-semibold transition-all cursor-pointer"
-              title="Edit Invoice Details & Pricing"
+              title="Edit Invoice Details, Pricing & Stock"
             >
               <Pencil className="w-4 h-4 text-indigo-400" />
               <span>Edit</span>
@@ -488,17 +477,6 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
         sale={currentSale}
         onClose={() => setIsLetterModalOpen(false)}
         onLetterUpdated={(updatedSale) => {
-          setEditedSale(updatedSale);
-          onInvoiceUpdated?.(updatedSale);
-        }}
-      />
-
-      {/* Stock & Invoice Quantities Synchronization Modal */}
-      <InvoiceStockUpdateModal
-        isOpen={isStockModalOpen}
-        sale={currentSale}
-        onClose={() => setIsStockModalOpen(false)}
-        onInvoiceUpdated={(updatedSale) => {
           setEditedSale(updatedSale);
           onInvoiceUpdated?.(updatedSale);
         }}

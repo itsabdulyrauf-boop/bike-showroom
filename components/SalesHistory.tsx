@@ -1,14 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { SaleRecord } from '@/types';
+import { SaleRecord, StockEntry, InventoryItem } from '@/types';
 import { formatPKR } from '@/lib/currency';
-import { getAllSales, deleteSaleRecord } from '@/lib/db';
+import { getAllSales, deleteSaleRecord, getAllStocks, getAllInventory } from '@/lib/db';
 import { performManualCloudSync } from '@/lib/syncEngine';
 import { Pagination } from '@/components/Pagination';
 import { EditInvoiceModal } from '@/components/EditInvoiceModal';
 import { UpdateLetterModal } from '@/components/UpdateLetterModal';
-import { InvoiceStockUpdateModal } from '@/components/InvoiceStockUpdateModal';
 import {
   Receipt,
   Search,
@@ -30,8 +29,8 @@ import {
   AlertTriangle,
   Loader2,
   FileCheck,
-  Boxes,
   Plus,
+  Layers,
 } from 'lucide-react';
 
 interface SalesHistoryProps {
@@ -40,6 +39,8 @@ interface SalesHistoryProps {
 
 export const SalesHistory: React.FC<SalesHistoryProps> = ({ onSelectSale }) => {
   const [sales, setSales] = useState<SaleRecord[]>([]);
+  const [stocks, setStocks] = useState<StockEntry[]>([]);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
@@ -54,7 +55,6 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ onSelectSale }) => {
   const [saleToDelete, setSaleToDelete] = useState<SaleRecord | null>(null);
   const [restoreStockOnDelete, setRestoreStockOnDelete] = useState<boolean>(true);
   const [saleForLetter, setSaleForLetter] = useState<SaleRecord | null>(null);
-  const [saleForStock, setSaleForStock] = useState<SaleRecord | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [deleteNotification, setDeleteNotification] = useState<{
     type: 'success' | 'error';
@@ -62,9 +62,11 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ onSelectSale }) => {
   } | null>(null);
 
   const loadSales = useCallback(() => {
-    getAllSales()
-      .then((data) => {
-        setSales(data);
+    Promise.all([getAllSales(), getAllStocks(), getAllInventory()])
+      .then(([salesData, stocksData, invData]) => {
+        setSales(salesData);
+        setStocks(stocksData);
+        setInventory(invData);
         setLoading(false);
       })
       .catch((err) => {
@@ -548,6 +550,7 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ onSelectSale }) => {
                 <th className="p-4">Account No</th>
                 <th className="p-4">Customer</th>
                 <th className="p-4">Vehicle / Item Details</th>
+                <th className="p-4">Stock / Product Lot</th>
                 <th className="p-4 text-right">Grand Total (PKR)</th>
                 <th className="p-4 text-center">Payment</th>
                 <th className="p-4 text-center">Sync</th>
@@ -652,6 +655,49 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ onSelectSale }) => {
                         )}
                       </div>
                     </td>
+                    <td className="p-4">
+                      {sale.items.map((item, idx) => {
+                        const matchedBike = inventory.find(
+                          (b) =>
+                            (item.bikeId && b.id === item.bikeId) ||
+                            (item.chassisNumber && b.chassisNumber === item.chassisNumber)
+                        );
+                        let sName = item.stockName || matchedBike?.stockName;
+                        let sBatch = item.stockBatchNumber || matchedBike?.stockBatchNumber;
+                        if (!sName && (item.stockId || matchedBike?.stockId)) {
+                          const targetId = item.stockId || matchedBike?.stockId;
+                          const stk = stocks.find((s) => s.id === targetId);
+                          if (stk) {
+                            sName = stk.stockName;
+                            sBatch = sBatch || stk.batchNumber;
+                          }
+                        }
+                        return (
+                          <div key={idx} className="text-xs mb-1.5 last:mb-0">
+                            {sName || sBatch ? (
+                              <div className="space-y-0.5">
+                                <span
+                                  className="font-semibold text-slate-200 text-xs block truncate max-w-[160px]"
+                                  title={sName || sBatch}
+                                >
+                                  {sName || sBatch}
+                                </span>
+                                {sBatch && (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-mono text-indigo-300 bg-indigo-950/70 px-1.5 py-0.5 rounded border border-indigo-800/50">
+                                    <Layers className="w-2.5 h-2.5 text-indigo-400" />
+                                    {sBatch}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-slate-500 font-mono italic">
+                                General Stock
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </td>
                     <td className="p-4 text-right font-mono font-bold text-emerald-400">
                       {formatPKR(sale.totalPKR)}
                       {sale.balancePKR > 0 && (
@@ -706,14 +752,6 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ onSelectSale }) => {
                           <span className="hidden xl:inline">Letter</span>
                         </button>
                         <button
-                          onClick={() => setSaleForStock(sale)}
-                          className="px-2 py-1.5 bg-slate-800 hover:bg-indigo-950/80 text-slate-300 hover:text-indigo-300 border border-slate-700 hover:border-indigo-600 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all shadow-sm cursor-pointer"
-                          title="Update stock & invoice quantities"
-                        >
-                          <Boxes className="w-3.5 h-3.5 text-indigo-400" />
-                          <span className="hidden xl:inline">Stock</span>
-                        </button>
-                        <button
                           onClick={() => setSaleToEdit(sale)}
                           className="px-2.5 py-1.5 bg-slate-800 hover:bg-indigo-900/60 text-slate-300 hover:text-indigo-200 border border-slate-700 hover:border-indigo-600 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
                           title="Edit Sales Invoice Details & Pricing"
@@ -738,7 +776,7 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ onSelectSale }) => {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={8} className="p-10 text-center text-slate-400 text-xs">
+                  <td colSpan={9} className="p-10 text-center text-slate-400 text-xs">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <Calendar className="w-8 h-8 text-slate-600" />
                       <p className="text-sm font-medium text-slate-300">
@@ -799,18 +837,6 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ onSelectSale }) => {
         sale={saleForLetter}
         onClose={() => setSaleForLetter(null)}
         onLetterUpdated={(updatedSale) => {
-          setSales((prev) =>
-            prev.map((s) => (s.id === updatedSale.id ? updatedSale : s))
-          );
-        }}
-      />
-
-      {/* Stock & Invoice Quantities Synchronization Modal */}
-      <InvoiceStockUpdateModal
-        isOpen={!!saleForStock}
-        sale={saleForStock}
-        onClose={() => setSaleForStock(null)}
-        onInvoiceUpdated={(updatedSale) => {
           setSales((prev) =>
             prev.map((s) => (s.id === updatedSale.id ? updatedSale : s))
           );

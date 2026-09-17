@@ -185,6 +185,10 @@ export const QuickPOS: React.FC<QuickPOSProps> = ({ onSaleComplete, settings }) 
 
     const newItem: SaleItem = {
       bikeId: item.id,
+      stockId: item.stockId,
+      stockBatchNumber: item.stockBatchNumber,
+      stockName: item.stockName,
+      purchasePricePKR: item.purchasePricePKR,
       itemType: item.itemType || 'New Bike',
       make: item.make,
       model: item.model,

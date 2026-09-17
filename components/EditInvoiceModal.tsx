@@ -7,9 +7,11 @@ import {
   PaymentMethod,
   PaymentStatus,
   RegistrationStatus,
+  InventoryItem,
+  StockEntry,
 } from '@/types';
 import { formatPKR } from '@/lib/currency';
-import { saveSaleRecord, saveInventoryItem, getAllInventory } from '@/lib/db';
+import { saveSaleRecord, saveInventoryItem, getAllInventory, getAllStocks } from '@/lib/db';
 import {
   X,
   Pencil,
@@ -22,6 +24,8 @@ import {
   AlertCircle,
   Save,
   Loader2,
+  Boxes,
+  Layers,
 } from 'lucide-react';
 
 interface EditInvoiceModalProps {
@@ -86,8 +90,41 @@ const EditInvoiceForm: React.FC<EditInvoiceFormProps> = ({
   const [notes, setNotes] = useState<string>(sale.notes || '');
   const [syncWithInventory, setSyncWithInventory] = useState<boolean>(true);
 
+  // Showroom Inventory & Stock synchronization state
+  const [inventoryList, setInventoryList] = useState<InventoryItem[]>([]);
+  const [stockList, setStockList] = useState<StockEntry[]>([]);
+  const [inventoryStockCounts, setInventoryStockCounts] = useState<Record<string, number>>({});
+
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([getAllInventory(), getAllStocks()])
+      .then(([invs, stks]) => {
+        if (!active) return;
+        setInventoryList(invs);
+        setStockList(stks);
+
+        const initialStockCounts: Record<string, number> = {};
+        for (const it of sale.items) {
+          const matched = invs.find(
+            (b) =>
+              (it.bikeId && b.id === it.bikeId) ||
+              (it.chassisNumber && b.chassisNumber === it.chassisNumber)
+          );
+          if (matched) {
+            initialStockCounts[matched.id] = matched.stockCount;
+          }
+        }
+        setInventoryStockCounts(initialStockCounts);
+      })
+      .catch((err) => console.warn('Could not load inventory in EditInvoiceModal:', err));
+
+    return () => {
+      active = false;
+    };
+  }, [sale]);
 
   const handleUpdateItemField = (
     index: number,
@@ -138,6 +175,34 @@ const EditInvoiceForm: React.FC<EditInvoiceFormProps> = ({
     setErrorMessage(null);
 
     try {
+      // Enrich items with stock batch/name if available
+      const finalItems: SaleItem[] = items.map((sItem) => {
+        const matched = inventoryList.find(
+          (b) =>
+            (sItem.bikeId && b.id === sItem.bikeId) ||
+            (sItem.chassisNumber && b.chassisNumber === sItem.chassisNumber)
+        );
+        let sName = sItem.stockName || matched?.stockName;
+        let sBatch = sItem.stockBatchNumber || matched?.stockBatchNumber;
+        let sId = sItem.stockId || matched?.stockId;
+        if (!sName && (sId || sBatch)) {
+          const matchedStock = stockList.find(
+            (stk) => (sId && stk.id === sId) || (sBatch && stk.batchNumber === sBatch)
+          );
+          if (matchedStock) {
+            sName = matchedStock.stockName;
+            sBatch = sBatch || matchedStock.batchNumber;
+            sId = sId || matchedStock.id;
+          }
+        }
+        return {
+          ...sItem,
+          stockId: sId,
+          stockBatchNumber: sBatch,
+          stockName: sName,
+        };
+      });
+
       const updatedSale: SaleRecord = {
         ...sale,
         customerName: customerName.trim(),
@@ -145,7 +210,7 @@ const EditInvoiceForm: React.FC<EditInvoiceFormProps> = ({
         customerCnic: customerCnic.trim(),
         customerAddress: customerAddress.trim(),
         accountNumber: accountNumber.trim() || undefined,
-        items,
+        items: finalItems,
         subtotalPKR,
         discountPKR,
         taxPKR,
@@ -169,26 +234,45 @@ const EditInvoiceForm: React.FC<EditInvoiceFormProps> = ({
         syncStatus: 'pending',
       };
 
-      // If user opted to update selling price into Showroom stock
-      if (syncWithInventory) {
-        try {
-          const allInv = await getAllInventory();
-          for (const sItem of items) {
-            if (sItem.bikeId && sItem.pricePKR > 0) {
-              const matched = allInv.find((inv) => inv.id === sItem.bikeId);
-              if (matched && matched.sellingPricePKR !== sItem.pricePKR) {
-                await saveInventoryItem({
-                  ...matched,
-                  sellingPricePKR: sItem.pricePKR,
-                  updatedAt: new Date().toISOString(),
-                  syncStatus: 'pending',
-                });
-              }
+      // Synchronize showroom stock quantity and rates
+      try {
+        const allInv = await getAllInventory();
+        for (const sItem of finalItems) {
+          const matched = allInv.find(
+            (inv) =>
+              (sItem.bikeId && inv.id === sItem.bikeId) ||
+              (sItem.chassisNumber && inv.chassisNumber === sItem.chassisNumber)
+          );
+
+          if (matched) {
+            const hasStockEdit = inventoryStockCounts[matched.id] !== undefined;
+            const newStockCount = hasStockEdit
+              ? inventoryStockCounts[matched.id]
+              : matched.stockCount;
+            const newSellingPrice =
+              syncWithInventory && sItem.pricePKR > 0
+                ? sItem.pricePKR
+                : matched.sellingPricePKR;
+
+            const shouldUpdate =
+              hasStockEdit ||
+              newStockCount !== matched.stockCount ||
+              newSellingPrice !== matched.sellingPricePKR;
+
+            if (shouldUpdate) {
+              await saveInventoryItem({
+                ...matched,
+                stockCount: newStockCount,
+                status: newStockCount > 0 ? 'Available' : 'Sold',
+                sellingPricePKR: newSellingPrice,
+                updatedAt: new Date().toISOString(),
+                syncStatus: 'pending',
+              });
             }
           }
-        } catch (invErr) {
-          console.warn('Could not sync updated price with inventory:', invErr);
         }
+      } catch (invErr) {
+        console.warn('Could not sync stock or rates with showroom inventory:', invErr);
       }
 
       await saveSaleRecord(updatedSale);
@@ -325,112 +409,187 @@ const EditInvoiceForm: React.FC<EditInvoiceFormProps> = ({
             </div>
 
             <div className="space-y-3">
-              {items.map((item, idx) => (
-                <div
-                  key={idx}
-                  className="bg-slate-900 border border-slate-800 p-3.5 rounded-xl space-y-3"
-                >
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-white text-sm">
-                        {item.make} {item.model}
-                      </span>
-                      {item.itemType && (
-                        <span className="text-[10px] px-2 py-0.5 rounded font-bold uppercase bg-slate-800 text-indigo-300 border border-slate-700">
-                          {item.itemType}
+              {items.map((item, idx) => {
+                const matchedBike = inventoryList.find(
+                  (b) =>
+                    (item.bikeId && b.id === item.bikeId) ||
+                    (item.chassisNumber && b.chassisNumber === item.chassisNumber)
+                );
+
+                let sName = item.stockName || matchedBike?.stockName;
+                let sBatch = item.stockBatchNumber || matchedBike?.stockBatchNumber;
+                if (!sName && (item.stockId || matchedBike?.stockId)) {
+                  const targetId = item.stockId || matchedBike?.stockId;
+                  const stk = stockList.find((s) => s.id === targetId);
+                  if (stk) {
+                    sName = stk.stockName;
+                    sBatch = sBatch || stk.batchNumber;
+                  }
+                }
+
+                return (
+                  <div
+                    key={idx}
+                    className="bg-slate-900 border border-slate-800 p-3.5 rounded-xl space-y-3"
+                  >
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-white text-sm">
+                          {item.make} {item.model}
                         </span>
-                      )}
-                    </div>
-                    <div className="text-xs font-mono text-slate-400">
-                      Item #{idx + 1}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                    <div>
-                      <label className="block text-slate-400 font-medium mb-1 text-xs">
-                        Chassis / Frame #
-                      </label>
-                      <input
-                        type="text"
-                        value={item.chassisNumber}
-                        onChange={(e) =>
-                          handleUpdateItemField(idx, 'chassisNumber', e.target.value)
-                        }
-                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 font-mono text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-400 font-medium mb-1 text-xs">
-                        Engine / Motor # (Optional)
-                      </label>
-                      <input
-                        type="text"
-                        value={item.engineNumber || ''}
-                        onChange={(e) =>
-                          handleUpdateItemField(idx, 'engineNumber', e.target.value)
-                        }
-                        placeholder="Optional / N/A"
-                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 font-mono text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
-                      />
+                        {item.itemType && (
+                          <span className="text-[10px] px-2 py-0.5 rounded font-bold uppercase bg-slate-800 text-indigo-300 border border-slate-700">
+                            {item.itemType}
+                          </span>
+                        )}
+                        {sName || sBatch ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-mono text-indigo-300 bg-indigo-950/80 px-2 py-0.5 rounded-md border border-indigo-800/60">
+                            <Layers className="w-3 h-3 text-indigo-400" />
+                            <span>Stock: <strong className="text-white">{sName || sBatch}</strong>{sBatch && sName ? ` (${sBatch})` : ''}</span>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-mono text-slate-500 italic">
+                            General Stock
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs font-mono text-slate-400">
+                        Item #{idx + 1}
+                      </div>
                     </div>
 
-                    <div>
-                      <label className="block text-slate-400 font-medium mb-1 text-xs">
-                        Qty / Units *
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="999"
-                        required
-                        value={item.quantity || 1}
-                        onChange={(e) =>
-                          handleUpdateItemField(
-                            idx,
-                            'quantity',
-                            Math.max(1, parseInt(e.target.value, 10) || 1)
-                          )
-                        }
-                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 font-mono font-bold text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
-                      />
-                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                      <div>
+                        <label className="block text-slate-400 font-medium mb-1 text-xs">
+                          Chassis / Frame #
+                        </label>
+                        <input
+                          type="text"
+                          value={item.chassisNumber}
+                          onChange={(e) =>
+                            handleUpdateItemField(idx, 'chassisNumber', e.target.value)
+                          }
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 font-mono text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
 
-                    {/* SELLING PRICE INPUT */}
-                    <div>
-                      <label className="block text-emerald-400 font-bold mb-1 text-xs flex items-center gap-1">
-                        <Pencil className="w-3 h-3 text-emerald-400" />
-                        <span>Unit Rate (PKR) *</span>
-                      </label>
-                      <div className="relative flex items-center">
-                        <span className="absolute left-2 text-slate-500 font-mono text-xs">
-                          Rs.
-                        </span>
+                      <div>
+                        <label className="block text-slate-400 font-medium mb-1 text-xs">
+                          Engine / Motor # (Optional)
+                        </label>
+                        <input
+                          type="text"
+                          value={item.engineNumber || ''}
+                          onChange={(e) =>
+                            handleUpdateItemField(idx, 'engineNumber', e.target.value)
+                          }
+                          placeholder="Optional / N/A"
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 font-mono text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-400 font-medium mb-1 text-xs">
+                          Invoice Qty (Units) *
+                        </label>
                         <input
                           type="number"
-                          min="0"
+                          min="1"
+                          max="999"
                           required
-                          value={item.pricePKR === 0 ? '' : item.pricePKR}
+                          value={item.quantity || 1}
                           onChange={(e) =>
                             handleUpdateItemField(
                               idx,
-                              'pricePKR',
-                              Number(e.target.value)
+                              'quantity',
+                              Math.max(1, parseInt(e.target.value, 10) || 1)
                             )
                           }
-                          placeholder="0"
-                          className={`w-full bg-slate-950 border rounded-lg pl-8 pr-2.5 py-1.5 font-mono font-bold text-xs text-emerald-400 focus:outline-none transition-all ${
-                            !item.pricePKR || item.pricePKR <= 0
-                              ? 'border-amber-500 bg-amber-950/40 text-amber-300 ring-1 ring-amber-500'
-                              : 'border-slate-700 focus:border-emerald-500'
-                          }`}
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 font-mono font-bold text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
                         />
                       </div>
+
+                      {/* SELLING PRICE INPUT */}
+                      <div>
+                        <label className="block text-emerald-400 font-bold mb-1 text-xs flex items-center gap-1">
+                          <Pencil className="w-3 h-3 text-emerald-400" />
+                          <span>Unit Rate (PKR) *</span>
+                        </label>
+                        <div className="relative flex items-center">
+                          <span className="absolute left-2 text-slate-500 font-mono text-xs">
+                            Rs.
+                          </span>
+                          <input
+                            type="number"
+                            min="0"
+                            required
+                            value={item.pricePKR === 0 ? '' : item.pricePKR}
+                            onChange={(e) =>
+                              handleUpdateItemField(
+                                idx,
+                                'pricePKR',
+                                Number(e.target.value)
+                              )
+                            }
+                            placeholder="0"
+                            className={`w-full bg-slate-950 border rounded-lg pl-8 pr-2.5 py-1.5 font-mono font-bold text-xs text-emerald-400 focus:outline-none transition-all ${
+                              !item.pricePKR || item.pricePKR <= 0
+                                ? 'border-amber-500 bg-amber-950/40 text-amber-300 ring-1 ring-amber-500'
+                                : 'border-slate-700 focus:border-emerald-500'
+                            }`}
+                          />
+                        </div>
+                      </div>
                     </div>
+
+                    {/* Showroom Inventory Stock Update Field */}
+                    {matchedBike && (
+                      <div className="pt-2.5 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2.5 bg-slate-950/50 p-2.5 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1.5 bg-indigo-950/80 text-indigo-400 rounded-md border border-indigo-800/60">
+                            <Boxes className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-white block">
+                              Showroom Inventory Available Stock
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              Current in Showroom:{' '}
+                              <strong className="text-emerald-400 font-mono">
+                                {matchedBike.stockCount} Units
+                              </strong>
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs text-slate-300 font-medium">Update Showroom Units:</label>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              min="0"
+                              max="9999"
+                              value={
+                                inventoryStockCounts[matchedBike.id] !== undefined
+                                  ? inventoryStockCounts[matchedBike.id]
+                                  : matchedBike.stockCount
+                              }
+                              onChange={(e) => {
+                                const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                                setInventoryStockCounts((prev) => ({
+                                  ...prev,
+                                  [matchedBike.id]: val,
+                                }));
+                              }}
+                              className="w-24 bg-slate-900 border border-indigo-700/70 rounded-lg px-2.5 py-1 text-center font-mono font-bold text-indigo-300 text-xs focus:outline-none focus:border-indigo-500"
+                            />
+                            <span className="text-xs text-slate-400 font-mono">Units</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {items.some((ci) => ci.bikeId) && (

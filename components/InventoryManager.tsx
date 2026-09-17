@@ -26,6 +26,7 @@ import {
   AlertTriangle,
   Boxes,
   Tag,
+  Layers,
 } from 'lucide-react';
 
 export const InventoryManager: React.FC = () => {
@@ -232,6 +233,7 @@ export const InventoryManager: React.FC = () => {
         status: formData.status,
         stockId: formData.stockId || undefined,
         stockBatchNumber: selectedStock ? selectedStock.batchNumber : undefined,
+        stockName: selectedStock ? selectedStock.stockName : undefined,
         notes: formData.notes,
         updatedAt: new Date().toISOString(),
         syncStatus: 'pending',
@@ -499,6 +501,7 @@ export const InventoryManager: React.FC = () => {
             <thead className="bg-slate-950 text-slate-400 uppercase text-[11px] font-mono border-b border-slate-800">
               <tr>
                 <th className="p-4">Item & Model</th>
+                <th className="p-4">Stock / Product Lot</th>
                 <th className="p-4">Type</th>
                 <th className="p-4">Chassis / Frame #</th>
                 <th className="p-4">Engine / Motor #</th>
@@ -511,111 +514,128 @@ export const InventoryManager: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-slate-800/60">
               {paginatedItems.length > 0 ? (
-                paginatedItems.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-800/40 transition-all">
-                    <td className="p-4 font-bold text-white">
-                      <div className="flex items-center gap-2.5">
-                        <div className="p-2 bg-slate-800 rounded-xl text-indigo-400 border border-slate-700/60">
-                          <Bike className="w-4 h-4" />
+                paginatedItems.map((item) => {
+                  let stockName = item.stockName;
+                  let batch = item.stockBatchNumber;
+                  if (!stockName && item.stockId) {
+                    const matchedStock = stocks.find((s) => s.id === item.stockId);
+                    if (matchedStock) {
+                      stockName = matchedStock.stockName;
+                      batch = batch || matchedStock.batchNumber;
+                    }
+                  }
+                  if (!stockName && batch) {
+                    const matchedStock = stocks.find((s) => s.batchNumber === batch);
+                    if (matchedStock) {
+                      stockName = matchedStock.stockName;
+                    }
+                  }
+
+                  return (
+                    <tr key={item.id} className="hover:bg-slate-800/40 transition-all">
+                      <td className="p-4 font-bold text-white">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 bg-slate-800 rounded-xl text-indigo-400 border border-slate-700/60">
+                            <Bike className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <span className="text-white text-sm">
+                              {item.make} {item.model}
+                            </span>
+                            {item.variant && (
+                              <span className="block text-xs font-normal text-slate-400">
+                                {item.variant}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <div>
-                          <span className="text-white text-sm">
-                            {item.make} {item.model}
+                      </td>
+                      <td className="p-4">
+                        {stockName || batch ? (
+                          <div className="space-y-1">
+                            <span className="font-semibold text-white text-xs block leading-tight">
+                              {stockName || `Lot ${batch}`}
+                            </span>
+                            {batch && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-mono text-indigo-300 bg-indigo-950/80 px-1.5 py-0.5 rounded border border-indigo-800/60">
+                                <Layers className="w-2.5 h-2.5 text-indigo-400" />
+                                {batch}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-500 font-mono italic">
+                            General Stock
                           </span>
-                          {item.variant && (
-                            <span className="block text-xs font-normal text-slate-400">
-                              {item.variant}
-                            </span>
-                          )}
-                          {item.stockBatchNumber && (
-                            <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[10px] font-mono bg-indigo-950/80 text-indigo-300 border border-indigo-800/60">
-                              <Boxes className="w-2.5 h-2.5 text-indigo-400" />
-                              {item.stockBatchNumber}
-                            </span>
-                          )}
+                        )}
+                      </td>
+                      <td className="p-4">
+                        {renderTypeBadge(item.itemType)}
+                      </td>
+                      <td className="p-4 font-mono font-bold text-indigo-300 bg-indigo-950/20">
+                        {item.chassisNumber}
+                      </td>
+                      <td className="p-4 font-mono font-bold text-slate-200">
+                        {item.engineNumber && item.engineNumber !== 'N/A' ? (
+                          item.engineNumber
+                        ) : (
+                          <span className="text-slate-500 font-normal italic text-xs">Optional / N/A</span>
+                        )}
+                      </td>
+                      <td className="p-4 text-slate-300">
+                        <span className="font-semibold block">{item.color || 'Standard'}</span>
+                        <span className="text-xs text-slate-500 font-mono">Model {item.year}</span>
+                      </td>
+                      <td className="p-4 text-right font-mono font-bold text-emerald-400 text-sm">
+                        {formatPKR(item.sellingPricePKR)}
+                      </td>
+                      <td className="p-4 text-center font-mono font-bold">
+                        <div className="flex items-center justify-center">
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-800/90 border border-slate-700 rounded-lg text-slate-200">
+                            <span className="font-mono text-sm font-bold text-white">{item.stockCount}</span>
+                            <span className="text-[10px] text-slate-400 font-normal hidden sm:inline">Units</span>
+                          </span>
                         </div>
-                      </div>
-                    </td>
-                    <td className="p-4">
-                      {renderTypeBadge(item.itemType)}
-                    </td>
-                    <td className="p-4 font-mono font-bold text-indigo-300 bg-indigo-950/20">
-                      {item.chassisNumber}
-                    </td>
-                    <td className="p-4 font-mono font-bold text-slate-200">
-                      {item.engineNumber && item.engineNumber !== 'N/A' ? (
-                        item.engineNumber
-                      ) : (
-                        <span className="text-slate-500 font-normal italic text-xs">Optional / N/A</span>
-                      )}
-                    </td>
-                    <td className="p-4 text-slate-300">
-                      <span className="font-semibold block">{item.color || 'Standard'}</span>
-                      <span className="text-xs text-slate-500 font-mono">Model {item.year}</span>
-                    </td>
-                    <td className="p-4 text-right font-mono font-bold text-emerald-400 text-sm">
-                      {formatPKR(item.sellingPricePKR)}
-                    </td>
-                    <td className="p-4 text-center font-mono font-bold">
-                      <div className="flex items-center justify-center">
-                        <button
-                          type="button"
-                          onClick={() => setStockItemToUpdate(item)}
-                          className="group inline-flex items-center gap-1.5 px-3 py-1 bg-slate-800 hover:bg-indigo-950/90 border border-slate-700 hover:border-indigo-500 rounded-lg text-slate-200 hover:text-indigo-300 transition-all cursor-pointer shadow-sm"
-                          title="Click to update stock quantity"
+                      </td>
+                      <td className="p-4 text-center">
+                        <span
+                          className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                            item.status === 'Available'
+                              ? 'bg-emerald-950 text-emerald-400 border-emerald-800'
+                              : item.status === 'Sold'
+                              ? 'bg-slate-800 text-slate-400 border-slate-700'
+                              : 'bg-amber-950 text-amber-400 border-amber-800'
+                          }`}
                         >
-                          <Boxes className="w-3.5 h-3.5 text-indigo-400 group-hover:scale-110 transition-transform" />
-                          <span className="font-mono text-sm font-bold">{item.stockCount}</span>
-                          <span className="text-[10px] text-slate-400 font-normal hidden sm:inline">Units</span>
-                        </button>
-                      </div>
-                    </td>
-                    <td className="p-4 text-center">
-                      <span
-                        className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
-                          item.status === 'Available'
-                            ? 'bg-emerald-950 text-emerald-400 border-emerald-800'
-                            : item.status === 'Sold'
-                            ? 'bg-slate-800 text-slate-400 border-slate-700'
-                            : 'bg-amber-950 text-amber-400 border-amber-800'
-                        }`}
-                      >
-                        {item.status}
-                      </span>
-                    </td>
-                    <td className="p-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setStockItemToUpdate(item)}
-                          className="p-1.5 bg-slate-800 hover:bg-indigo-950 text-indigo-400 hover:text-indigo-300 border border-slate-700 hover:border-indigo-600 rounded-lg transition-all cursor-pointer"
-                          title="Update Stock Quantity"
-                        >
-                          <Boxes className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openEditModal(item)}
-                          className="p-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 rounded-lg transition-all cursor-pointer"
-                          title="Edit Full Vehicle Record"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setItemToDelete(item)}
-                          className="p-1.5 bg-slate-800 hover:bg-rose-950 text-rose-400 rounded-lg transition-all cursor-pointer"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                          {item.status}
+                        </span>
+                      </td>
+                      <td className="p-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(item)}
+                            className="p-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 rounded-lg transition-all cursor-pointer"
+                            title="Edit Full Vehicle Record & Stock"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setItemToDelete(item)}
+                            className="p-1.5 bg-slate-800 hover:bg-rose-950 text-rose-400 rounded-lg transition-all cursor-pointer"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               ) : (
                 <tr>
-                  <td colSpan={9} className="p-8 text-center text-slate-500 text-xs">
+                  <td colSpan={10} className="p-8 text-center text-slate-500 text-xs">
                     No items matching your search or filters. Click &quot;+ Add New Stock Record&quot; above to create one.
                   </td>
                 </tr>

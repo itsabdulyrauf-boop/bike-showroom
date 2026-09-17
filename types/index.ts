@@ -36,6 +36,7 @@ export interface InventoryItem {
   id: string;
   stockId?: string; // Reference to StockEntry
   stockBatchNumber?: string; // Serial/batch number for display
+  stockName?: string; // Stock Lot / Product Name
   itemType?: InventoryItemType;
   make: string;
   model: string;
@@ -68,6 +69,8 @@ export interface CustomerItem {
 export interface SaleItem {
   bikeId?: string;
   stockId?: string;
+  stockBatchNumber?: string;
+  stockName?: string;
   purchasePricePKR?: number;
   itemType?: InventoryItemType;
   make: string;
