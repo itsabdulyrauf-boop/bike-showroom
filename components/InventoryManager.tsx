@@ -6,6 +6,7 @@ import { formatPKR } from '@/lib/currency';
 import { getAllInventory, saveInventoryItem, deleteInventoryItem, getAllStocks, getAllBrands } from '@/lib/db';
 import { Pagination } from '@/components/Pagination';
 import { BrandManagerModal } from '@/components/BrandManagerModal';
+import { QuickStockUpdateModal } from '@/components/QuickStockUpdateModal';
 import {
   Package,
   Plus,
@@ -39,6 +40,7 @@ export const InventoryManager: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('Available');
   const [stockBatchFilter, setStockBatchFilter] = useState<string>('All');
   const [isBrandModalOpen, setIsBrandModalOpen] = useState<boolean>(false);
+  const [stockItemToUpdate, setStockItemToUpdate] = useState<InventoryItem | null>(null);
 
   // Delete Confirmation Modal State
   const [itemToDelete, setItemToDelete] = useState<InventoryItem | null>(null);
@@ -209,11 +211,6 @@ export const InventoryManager: React.FC = () => {
       return;
     }
 
-    if (formData.itemType !== 'Rickshaw Body' && !formData.engineNumber) {
-      setFormError('Engine number is required for motorcycle & auto-rickshaw units.');
-      return;
-    }
-
     setIsSubmitting(true);
 
     try {
@@ -227,7 +224,7 @@ export const InventoryManager: React.FC = () => {
         variant: formData.variant,
         year: formData.year,
         chassisNumber: formData.chassisNumber,
-        engineNumber: formData.engineNumber || 'N/A',
+        engineNumber: formData.engineNumber.trim() || '',
         color: formData.color,
         purchasePricePKR: Number(formData.purchasePricePKR),
         sellingPricePKR: Number(formData.sellingPricePKR),
@@ -504,10 +501,10 @@ export const InventoryManager: React.FC = () => {
                 <th className="p-4">Item & Model</th>
                 <th className="p-4">Type</th>
                 <th className="p-4">Chassis / Frame #</th>
-                <th className="p-4">Engine Number</th>
+                <th className="p-4">Engine / Motor #</th>
                 <th className="p-4">Color / Year</th>
                 <th className="p-4 text-right">Selling Rate (PKR)</th>
-                <th className="p-4 text-center">Stock</th>
+                <th className="p-4 text-center">Stock Quantity</th>
                 <th className="p-4 text-center">Status</th>
                 <th className="p-4 text-right">Actions</th>
               </tr>
@@ -546,7 +543,11 @@ export const InventoryManager: React.FC = () => {
                       {item.chassisNumber}
                     </td>
                     <td className="p-4 font-mono font-bold text-slate-200">
-                      {item.engineNumber || 'N/A'}
+                      {item.engineNumber && item.engineNumber !== 'N/A' ? (
+                        item.engineNumber
+                      ) : (
+                        <span className="text-slate-500 font-normal italic text-xs">Optional / N/A</span>
+                      )}
                     </td>
                     <td className="p-4 text-slate-300">
                       <span className="font-semibold block">{item.color || 'Standard'}</span>
@@ -556,9 +557,18 @@ export const InventoryManager: React.FC = () => {
                       {formatPKR(item.sellingPricePKR)}
                     </td>
                     <td className="p-4 text-center font-mono font-bold">
-                      <span className="px-2.5 py-1 bg-slate-800 border border-slate-700 rounded-lg text-slate-200">
-                        {item.stockCount}
-                      </span>
+                      <div className="flex items-center justify-center">
+                        <button
+                          type="button"
+                          onClick={() => setStockItemToUpdate(item)}
+                          className="group inline-flex items-center gap-1.5 px-3 py-1 bg-slate-800 hover:bg-indigo-950/90 border border-slate-700 hover:border-indigo-500 rounded-lg text-slate-200 hover:text-indigo-300 transition-all cursor-pointer shadow-sm"
+                          title="Click to update stock quantity"
+                        >
+                          <Boxes className="w-3.5 h-3.5 text-indigo-400 group-hover:scale-110 transition-transform" />
+                          <span className="font-mono text-sm font-bold">{item.stockCount}</span>
+                          <span className="text-[10px] text-slate-400 font-normal hidden sm:inline">Units</span>
+                        </button>
+                      </div>
                     </td>
                     <td className="p-4 text-center">
                       <span
@@ -574,17 +584,27 @@ export const InventoryManager: React.FC = () => {
                       </span>
                     </td>
                     <td className="p-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
+                      <div className="flex items-center justify-end gap-1.5">
                         <button
+                          type="button"
+                          onClick={() => setStockItemToUpdate(item)}
+                          className="p-1.5 bg-slate-800 hover:bg-indigo-950 text-indigo-400 hover:text-indigo-300 border border-slate-700 hover:border-indigo-600 rounded-lg transition-all cursor-pointer"
+                          title="Update Stock Quantity"
+                        >
+                          <Boxes className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => openEditModal(item)}
-                          className="p-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 rounded-lg transition-all"
-                          title="Edit"
+                          className="p-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 rounded-lg transition-all cursor-pointer"
+                          title="Edit Full Vehicle Record"
                         >
                           <Edit className="w-4 h-4" />
                         </button>
                         <button
+                          type="button"
                           onClick={() => setItemToDelete(item)}
-                          className="p-1.5 bg-slate-800 hover:bg-rose-950 text-rose-400 rounded-lg transition-all"
+                          className="p-1.5 bg-slate-800 hover:bg-rose-950 text-rose-400 rounded-lg transition-all cursor-pointer"
                           title="Delete"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -930,16 +950,19 @@ export const InventoryManager: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-400 mb-1">
-                    Engine Number {formData.itemType === 'Rickshaw Body' ? '(Optional for Body)' : '*'}
+                  <label className="block text-slate-400 mb-1 text-xs">
+                    Engine / Motor Number (Optional)
                   </label>
                   <input
                     type="text"
                     value={formData.engineNumber}
                     onChange={(e) => setFormData({ ...formData, engineNumber: e.target.value })}
-                    placeholder={formData.itemType === 'Rickshaw Body' ? 'N/A or Optional' : 'CG125E-...'}
+                    placeholder="Optional (e.g. CG125E-... or Motor # for EV)"
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono font-bold focus:border-indigo-500"
                   />
+                  <span className="text-[10px] text-slate-500 block mt-1">
+                    Leave blank for electric bikes, motor-less vehicles, or rickshaw bodies
+                  </span>
                 </div>
               </div>
 
@@ -1041,6 +1064,14 @@ export const InventoryManager: React.FC = () => {
           setFormData((prev) => ({ ...prev, make: newBrand }));
           setBrandFilter(newBrand);
         }}
+      />
+
+      {/* Quick Stock Quantity Update Modal */}
+      <QuickStockUpdateModal
+        isOpen={!!stockItemToUpdate}
+        item={stockItemToUpdate}
+        onClose={() => setStockItemToUpdate(null)}
+        onStockUpdated={() => loadInventory(true)}
       />
     </div>
   );

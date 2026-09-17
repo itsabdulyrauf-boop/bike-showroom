@@ -228,7 +228,7 @@ export const QuickPOS: React.FC<QuickPOSProps> = ({ onSaleComplete, settings }) 
       model: customBike.model,
       variant: customBike.variant || (isRickshawBody ? 'Rickshaw Body Unit' : 'Standard'),
       chassisNumber: customBike.chassisNumber || `CH-${fallbackId}`,
-      engineNumber: isRickshawBody ? (customBike.engineNumber || 'N/A') : (customBike.engineNumber || `ENG-${fallbackId}`),
+      engineNumber: customBike.engineNumber.trim() || (isRickshawBody ? 'N/A' : ''),
       color: customBike.color || 'Standard',
       year: customBike.year || new Date().getFullYear().toString(),
       pricePKR: Number(customBike.pricePKR) || 0,
@@ -857,13 +857,13 @@ export const QuickPOS: React.FC<QuickPOSProps> = ({ onSaleComplete, settings }) 
                   </div>
                   <div>
                     <label className="block text-slate-400 mb-1">
-                      Engine Number {customBike.itemType === 'Rickshaw Body' ? '(Optional for Body)' : ''}
+                      Engine / Motor Number (Optional)
                     </label>
                     <input
                       type="text"
                       value={customBike.engineNumber}
                       onChange={(e) => setCustomBike({ ...customBike, engineNumber: e.target.value })}
-                      placeholder={customBike.itemType === 'Rickshaw Body' ? 'N/A or Optional' : 'CG125E-...'}
+                      placeholder="Optional (e.g. CG125E-... or Motor # for EV)"
                       className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500"
                     />
                   </div>

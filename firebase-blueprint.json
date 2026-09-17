@@ -21,7 +21,7 @@
         "updatedAt": { "type": "string" },
         "syncStatus": { "type": "string" }
       },
-      "required": ["id", "make", "model", "chassisNumber", "engineNumber", "sellingPricePKR"]
+      "required": ["id", "make", "model", "chassisNumber", "sellingPricePKR"]
     },
     "sales": {
       "title": "Sale Record",
@@ -37,6 +37,9 @@
         "totalPKR": { "type": "number" },
         "paidAmountPKR": { "type": "number" },
         "paymentMethod": { "type": "string" },
+        "letterIssued": { "type": "string" },
+        "issuanceDate": { "type": "string" },
+        "letterNumber": { "type": "string" },
         "createdAt": { "type": "string" },
         "syncStatus": { "type": "string" }
       },

@@ -107,8 +107,10 @@ export interface SaleRecord {
   registrationStatus: RegistrationStatus;
   letterIssued?: 'Yes' | 'No';
   issuanceDate?: string;
+  letterNumber?: string;
   notes?: string;
   createdAt: string;
+  updatedAt?: string;
   syncStatus: SyncStatus;
 }
 

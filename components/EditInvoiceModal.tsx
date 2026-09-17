@@ -82,6 +82,7 @@ const EditInvoiceForm: React.FC<EditInvoiceFormProps> = ({
     sale.letterIssued === 'Yes' ? 'Yes' : 'No'
   );
   const [issuanceDate, setIssuanceDate] = useState<string>(sale.issuanceDate || '');
+  const [letterNumber, setLetterNumber] = useState<string>(sale.letterNumber || '');
   const [notes, setNotes] = useState<string>(sale.notes || '');
   const [syncWithInventory, setSyncWithInventory] = useState<boolean>(true);
 
@@ -159,6 +160,10 @@ const EditInvoiceForm: React.FC<EditInvoiceFormProps> = ({
         issuanceDate:
           letterIssued === 'Yes'
             ? issuanceDate || new Date().toISOString().split('T')[0]
+            : undefined,
+        letterNumber:
+          letterIssued === 'Yes' && letterNumber.trim()
+            ? letterNumber.trim()
             : undefined,
         notes: notes.trim() || undefined,
         syncStatus: 'pending',
@@ -341,9 +346,9 @@ const EditInvoiceForm: React.FC<EditInvoiceFormProps> = ({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                     <div>
-                      <label className="block text-slate-400 font-medium mb-1">
+                      <label className="block text-slate-400 font-medium mb-1 text-xs">
                         Chassis / Frame #
                       </label>
                       <input
@@ -352,13 +357,13 @@ const EditInvoiceForm: React.FC<EditInvoiceFormProps> = ({
                         onChange={(e) =>
                           handleUpdateItemField(idx, 'chassisNumber', e.target.value)
                         }
-                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 font-mono text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-slate-400 font-medium mb-1">
-                        Engine #
+                      <label className="block text-slate-400 font-medium mb-1 text-xs">
+                        Engine / Motor # (Optional)
                       </label>
                       <input
                         type="text"
@@ -366,18 +371,40 @@ const EditInvoiceForm: React.FC<EditInvoiceFormProps> = ({
                         onChange={(e) =>
                           handleUpdateItemField(idx, 'engineNumber', e.target.value)
                         }
-                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
+                        placeholder="Optional / N/A"
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 font-mono text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 font-medium mb-1 text-xs">
+                        Qty / Units *
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="999"
+                        required
+                        value={item.quantity || 1}
+                        onChange={(e) =>
+                          handleUpdateItemField(
+                            idx,
+                            'quantity',
+                            Math.max(1, parseInt(e.target.value, 10) || 1)
+                          )
+                        }
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 font-mono font-bold text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
                       />
                     </div>
 
                     {/* SELLING PRICE INPUT */}
                     <div>
-                      <label className="block text-emerald-400 font-bold mb-1 flex items-center gap-1">
+                      <label className="block text-emerald-400 font-bold mb-1 text-xs flex items-center gap-1">
                         <Pencil className="w-3 h-3 text-emerald-400" />
-                        <span>Selling Price / Rate (PKR) *</span>
+                        <span>Unit Rate (PKR) *</span>
                       </label>
                       <div className="relative flex items-center">
-                        <span className="absolute left-2.5 text-slate-500 font-mono text-xs">
+                        <span className="absolute left-2 text-slate-500 font-mono text-xs">
                           Rs.
                         </span>
                         <input
@@ -393,7 +420,7 @@ const EditInvoiceForm: React.FC<EditInvoiceFormProps> = ({
                             )
                           }
                           placeholder="0"
-                          className={`w-full bg-slate-950 border rounded-lg pl-9 pr-3 py-1.5 font-mono font-bold text-sm text-emerald-400 focus:outline-none transition-all ${
+                          className={`w-full bg-slate-950 border rounded-lg pl-8 pr-2.5 py-1.5 font-mono font-bold text-xs text-emerald-400 focus:outline-none transition-all ${
                             !item.pricePKR || item.pricePKR <= 0
                               ? 'border-amber-500 bg-amber-950/40 text-amber-300 ring-1 ring-amber-500'
                               : 'border-slate-700 focus:border-emerald-500'
@@ -593,8 +620,8 @@ const EditInvoiceForm: React.FC<EditInvoiceFormProps> = ({
               </div>
             </div>
 
-            {/* Letter Issued & Issuance Date */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            {/* Letter Issued, Issuance Date & Reference Number */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
               <div>
                 <label className="block text-slate-400 font-medium mb-1">
                   Letter Issued
@@ -610,8 +637,8 @@ const EditInvoiceForm: React.FC<EditInvoiceFormProps> = ({
                   }}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
                 >
-                  <option value="No">No</option>
-                  <option value="Yes">Yes</option>
+                  <option value="No">No — Pending</option>
+                  <option value="Yes">Yes — Issued</option>
                 </select>
               </div>
 
@@ -620,7 +647,7 @@ const EditInvoiceForm: React.FC<EditInvoiceFormProps> = ({
                   <span>Issuance Date</span>
                   {letterIssued !== 'Yes' && (
                     <span className="text-[10px] text-slate-500 font-normal italic">
-                      Enabled only when Yes
+                      When Yes
                     </span>
                   )}
                 </label>
@@ -632,6 +659,24 @@ const EditInvoiceForm: React.FC<EditInvoiceFormProps> = ({
                   className={`w-full bg-slate-900 border rounded-lg px-3 py-2 text-white text-xs focus:outline-none transition-all ${
                     letterIssued === 'Yes'
                       ? 'border-slate-700 focus:border-indigo-500 cursor-pointer'
+                      : 'border-slate-800 opacity-40 cursor-not-allowed bg-slate-950/60 text-slate-600'
+                  }`}
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 font-medium mb-1">
+                  Letter Ref # (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={letterNumber}
+                  onChange={(e) => setLetterNumber(e.target.value)}
+                  disabled={letterIssued !== 'Yes'}
+                  placeholder={letterIssued === 'Yes' ? 'e.g. LTR-0042' : 'Disabled'}
+                  className={`w-full bg-slate-900 border rounded-lg px-3 py-2 text-white text-xs font-mono focus:outline-none transition-all ${
+                    letterIssued === 'Yes'
+                      ? 'border-slate-700 focus:border-indigo-500'
                       : 'border-slate-800 opacity-40 cursor-not-allowed bg-slate-950/60 text-slate-600'
                   }`}
                 />

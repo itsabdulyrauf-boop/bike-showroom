@@ -7,6 +7,8 @@ import { getAllSales, deleteSaleRecord } from '@/lib/db';
 import { performManualCloudSync } from '@/lib/syncEngine';
 import { Pagination } from '@/components/Pagination';
 import { EditInvoiceModal } from '@/components/EditInvoiceModal';
+import { UpdateLetterModal } from '@/components/UpdateLetterModal';
+import { InvoiceStockUpdateModal } from '@/components/InvoiceStockUpdateModal';
 import {
   Receipt,
   Search,
@@ -27,6 +29,9 @@ import {
   Trash2,
   AlertTriangle,
   Loader2,
+  FileCheck,
+  Boxes,
+  Plus,
 } from 'lucide-react';
 
 interface SalesHistoryProps {
@@ -48,6 +53,8 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ onSelectSale }) => {
   // Deletion State
   const [saleToDelete, setSaleToDelete] = useState<SaleRecord | null>(null);
   const [restoreStockOnDelete, setRestoreStockOnDelete] = useState<boolean>(true);
+  const [saleForLetter, setSaleForLetter] = useState<SaleRecord | null>(null);
+  const [saleForStock, setSaleForStock] = useState<SaleRecord | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [deleteNotification, setDeleteNotification] = useState<{
     type: 'success' | 'error';
@@ -610,12 +617,40 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ onSelectSale }) => {
                                 {item.itemType}
                               </span>
                             )}
+                            <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 bg-slate-800 text-slate-300 rounded border border-slate-700">
+                              {item.quantity || 1} Unit{item.quantity && item.quantity > 1 ? 's' : ''}
+                            </span>
                           </div>
                           <span className="text-[11px] text-slate-400 font-mono block mt-0.5">
-                            Frame/Chassis: {item.chassisNumber} {item.engineNumber && item.engineNumber !== 'N/A' ? `| Eng: ${item.engineNumber}` : ''}
+                            Chassis: {item.chassisNumber} {item.engineNumber && item.engineNumber !== 'N/A' ? `| Eng: ${item.engineNumber}` : ''}
                           </span>
                         </div>
                       ))}
+
+                      {/* Registration Letter Status Banner */}
+                      <div className="mt-1.5 flex items-center gap-1.5">
+                        {sale.letterIssued === 'Yes' ? (
+                          <button
+                            type="button"
+                            onClick={() => setSaleForLetter(sale)}
+                            className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-400 bg-emerald-950/70 hover:bg-emerald-900/80 px-2 py-0.5 rounded-md border border-emerald-800 transition-colors cursor-pointer"
+                            title="Click to view or update registration letter"
+                          >
+                            <FileCheck className="w-3 h-3 text-emerald-400" />
+                            <span>Letter Attached {sale.issuanceDate ? `(${sale.issuanceDate})` : ''}</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setSaleForLetter(sale)}
+                            className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-400 bg-amber-950/70 hover:bg-amber-900/80 px-2 py-0.5 rounded-md border border-amber-800 transition-colors cursor-pointer"
+                            title="Click to attach or update registration letter"
+                          >
+                            <Plus className="w-3 h-3 text-amber-400" />
+                            <span>Add Letter</span>
+                          </button>
+                        )}
+                      </div>
                     </td>
                     <td className="p-4 text-right font-mono font-bold text-emerald-400">
                       {formatPKR(sale.totalPKR)}
@@ -653,18 +688,34 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ onSelectSale }) => {
                       )}
                     </td>
                     <td className="p-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
+                      <div className="flex items-center justify-end gap-1.5">
                         <button
                           onClick={() => onSelectSale(sale)}
-                          className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow transition-all hover:shadow-indigo-600/25"
+                          className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow transition-all hover:shadow-indigo-600/25 cursor-pointer"
                           title="View / Print Tax Invoice"
                         >
                           <Printer className="w-3.5 h-3.5" />
                           <span className="hidden sm:inline">Print</span>
                         </button>
                         <button
+                          onClick={() => setSaleForLetter(sale)}
+                          className="px-2 py-1.5 bg-slate-800 hover:bg-emerald-950/80 text-slate-300 hover:text-emerald-300 border border-slate-700 hover:border-emerald-600 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all shadow-sm cursor-pointer"
+                          title="Add / Update Registration Letter"
+                        >
+                          <FileCheck className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="hidden xl:inline">Letter</span>
+                        </button>
+                        <button
+                          onClick={() => setSaleForStock(sale)}
+                          className="px-2 py-1.5 bg-slate-800 hover:bg-indigo-950/80 text-slate-300 hover:text-indigo-300 border border-slate-700 hover:border-indigo-600 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all shadow-sm cursor-pointer"
+                          title="Update stock & invoice quantities"
+                        >
+                          <Boxes className="w-3.5 h-3.5 text-indigo-400" />
+                          <span className="hidden xl:inline">Stock</span>
+                        </button>
+                        <button
                           onClick={() => setSaleToEdit(sale)}
-                          className="px-2.5 py-1.5 bg-slate-800 hover:bg-indigo-900/60 text-slate-300 hover:text-indigo-200 border border-slate-700 hover:border-indigo-600 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
+                          className="px-2.5 py-1.5 bg-slate-800 hover:bg-indigo-900/60 text-slate-300 hover:text-indigo-200 border border-slate-700 hover:border-indigo-600 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
                           title="Edit Sales Invoice Details & Pricing"
                         >
                           <Pencil className="w-3.5 h-3.5 text-indigo-400" />
@@ -675,7 +726,7 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ onSelectSale }) => {
                             setSaleToDelete(sale);
                             setRestoreStockOnDelete(true);
                           }}
-                          className="p-1.5 sm:px-2.5 sm:py-1.5 bg-slate-800 hover:bg-rose-950/80 text-slate-400 hover:text-rose-300 border border-slate-700 hover:border-rose-800 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
+                          className="p-1.5 sm:px-2.5 sm:py-1.5 bg-slate-800 hover:bg-rose-950/80 text-slate-400 hover:text-rose-300 border border-slate-700 hover:border-rose-800 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
                           title="Delete Invoice & Sync with Firestore"
                         >
                           <Trash2 className="w-3.5 h-3.5 text-rose-400" />
@@ -739,6 +790,30 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({ onSelectSale }) => {
             prev.map((s) => (s.id === updatedSale.id ? updatedSale : s))
           );
           setSaleToEdit(null);
+        }}
+      />
+
+      {/* Add / Update Letter Modal */}
+      <UpdateLetterModal
+        isOpen={!!saleForLetter}
+        sale={saleForLetter}
+        onClose={() => setSaleForLetter(null)}
+        onLetterUpdated={(updatedSale) => {
+          setSales((prev) =>
+            prev.map((s) => (s.id === updatedSale.id ? updatedSale : s))
+          );
+        }}
+      />
+
+      {/* Stock & Invoice Quantities Synchronization Modal */}
+      <InvoiceStockUpdateModal
+        isOpen={!!saleForStock}
+        sale={saleForStock}
+        onClose={() => setSaleForStock(null)}
+        onInvoiceUpdated={(updatedSale) => {
+          setSales((prev) =>
+            prev.map((s) => (s.id === updatedSale.id ? updatedSale : s))
+          );
         }}
       />
 
