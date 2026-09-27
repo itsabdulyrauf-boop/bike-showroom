@@ -334,14 +334,29 @@ export const AnalyticsDashboard: React.FC = () => {
     let stockCogs = 0;
 
     sales.forEach((sale) => {
+      const saleSubtotal =
+        sale.subtotalPKR ||
+        sale.items.reduce(
+          (sum, it) => sum + (Number(it.pricePKR) || 0) * (Number(it.quantity) || 1),
+          0
+        ) ||
+        sale.totalPKR;
+
       sale.items.forEach((it) => {
         const matchesDirectly = it.stockId === stock.id;
         const matchesInv = assignedInv.some((inv) => inv.id === it.bikeId);
 
         if (matchesDirectly || matchesInv) {
           const qty = Number(it.quantity) || 1;
+          const itemGrossTotal = (Number(it.pricePKR) || 0) * qty;
+          // Proportionately distribute net invoice amount (after discount)
+          const itemNetRevenue =
+            saleSubtotal > 0
+              ? Math.round((itemGrossTotal / saleSubtotal) * Number(sale.totalPKR))
+              : itemGrossTotal;
+
           soldUnits += qty;
-          stockRevenue += (Number(it.pricePKR) || 0) * qty;
+          stockRevenue += itemNetRevenue;
 
           let c = Number(it.purchasePricePKR);
           if (!c || isNaN(c)) c = unitCost;
