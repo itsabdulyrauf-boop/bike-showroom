@@ -239,7 +239,20 @@ export default function Home() {
 
         {activeTab === 'stocks' && <StockManager key={`stocks-${dataVersion}`} />}
 
-        {activeTab === 'inventory' && <InventoryManager key={`inv-${dataVersion}`} />}
+        {activeTab === 'inventory' && (
+          <InventoryManager
+            key={`inv-${dataVersion}`}
+            onViewInvoice={(sale) => {
+              setSelectedSaleForInvoice(sale);
+              setActiveTab('sales');
+            }}
+            onNavigateToSales={() => setActiveTab('sales')}
+            onSaleCreated={() => {
+              setDataVersion((prev) => prev + 1);
+              refreshState();
+            }}
+          />
+        )}
 
         {activeTab === 'sales' && (
           <SalesHistory key={`sales-${dataVersion}`} onSelectSale={(sale) => setSelectedSaleForInvoice(sale)} />

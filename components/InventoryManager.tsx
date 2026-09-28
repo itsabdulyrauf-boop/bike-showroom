@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { InventoryItem, BikeStatus, InventoryItemType, StockEntry, BrandItem } from '@/types';
+import { InventoryItem, BikeStatus, InventoryItemType, StockEntry, BrandItem, SaleRecord } from '@/types';
 import { formatPKR } from '@/lib/currency';
-import { getAllInventory, saveInventoryItem, deleteInventoryItem, getAllStocks, getAllBrands } from '@/lib/db';
+import { getAllInventory, saveInventoryItem, deleteInventoryItem, getAllStocks, getAllBrands, getAllSales } from '@/lib/db';
 import { Pagination } from '@/components/Pagination';
 import { BrandManagerModal } from '@/components/BrandManagerModal';
 import { QuickStockUpdateModal } from '@/components/QuickStockUpdateModal';
+import { MarkBikeAsSoldModal } from '@/components/MarkBikeAsSoldModal';
 import {
   Package,
   Plus,
@@ -27,12 +28,25 @@ import {
   Boxes,
   Tag,
   Layers,
+  Receipt,
+  ArrowRight,
 } from 'lucide-react';
 
-export const InventoryManager: React.FC = () => {
+interface InventoryManagerProps {
+  onViewInvoice?: (sale: SaleRecord) => void;
+  onNavigateToSales?: () => void;
+  onSaleCreated?: () => void;
+}
+
+export const InventoryManager: React.FC<InventoryManagerProps> = ({
+  onViewInvoice,
+  onNavigateToSales,
+  onSaleCreated,
+}) => {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [stocks, setStocks] = useState<StockEntry[]>([]);
   const [brands, setBrands] = useState<BrandItem[]>([]);
+  const [sales, setSales] = useState<SaleRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -42,6 +56,14 @@ export const InventoryManager: React.FC = () => {
   const [stockBatchFilter, setStockBatchFilter] = useState<string>('All');
   const [isBrandModalOpen, setIsBrandModalOpen] = useState<boolean>(false);
   const [stockItemToUpdate, setStockItemToUpdate] = useState<InventoryItem | null>(null);
+
+  // Mark as Sold & Move to Invoice State
+  const [bikeToSell, setBikeToSell] = useState<InventoryItem | null>(null);
+  const [soldBannerInfo, setSoldBannerInfo] = useState<{
+    invoiceNumber: string;
+    bikeName: string;
+    sale: SaleRecord;
+  } | null>(null);
 
   // Delete Confirmation Modal State
   const [itemToDelete, setItemToDelete] = useState<InventoryItem | null>(null);
@@ -92,14 +114,16 @@ export const InventoryManager: React.FC = () => {
   const loadInventory = async (showLoading = false) => {
     if (showLoading) setLoading(true);
     try {
-      const [invData, stocksData, brandsData] = await Promise.all([
+      const [invData, stocksData, brandsData, salesData] = await Promise.all([
         getAllInventory(),
         getAllStocks(),
         getAllBrands(),
+        getAllSales(),
       ]);
       setItems(invData);
       setStocks(stocksData);
       setBrands(brandsData);
+      setSales(salesData);
     } catch (err) {
       console.error('Error loading inventory, stocks & brands:', err);
     } finally {
@@ -109,12 +133,13 @@ export const InventoryManager: React.FC = () => {
 
   useEffect(() => {
     let isMounted = true;
-    Promise.all([getAllInventory(), getAllStocks(), getAllBrands()])
-      .then(([invData, stocksData, brandsData]) => {
+    Promise.all([getAllInventory(), getAllStocks(), getAllBrands(), getAllSales()])
+      .then(([invData, stocksData, brandsData, salesData]) => {
         if (isMounted) {
           setItems(invData);
           setStocks(stocksData);
           setBrands(brandsData);
+          setSales(salesData);
           setLoading(false);
         }
       })
@@ -239,6 +264,14 @@ export const InventoryManager: React.FC = () => {
         syncStatus: 'pending',
       };
 
+      // If user selected 'Sold' in edit modal, route to MarkBikeAsSoldModal so invoice is created
+      if (formData.status === 'Sold' && (!editingItem || editingItem.status !== 'Sold')) {
+        setIsModalOpen(false);
+        setBikeToSell(newItem);
+        setIsSubmitting(false);
+        return;
+      }
+
       await saveInventoryItem(newItem);
       setIsModalOpen(false);
       await loadInventory();
@@ -246,6 +279,24 @@ export const InventoryManager: React.FC = () => {
       setFormError(err?.message || 'Failed to save inventory item');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleSoldComplete = async (newSale: SaleRecord) => {
+    const soldBike = bikeToSell;
+    setBikeToSell(null);
+    await loadInventory();
+    onSaleCreated?.();
+    if (soldBike) {
+      setSoldBannerInfo({
+        invoiceNumber: newSale.invoiceNumber,
+        bikeName: `${soldBike.make} ${soldBike.model}`,
+        sale: newSale,
+      });
+    }
+    // Move to Invoice section and display invoice details
+    if (onViewInvoice) {
+      onViewInvoice(newSale);
     }
   };
 
@@ -312,9 +363,10 @@ export const InventoryManager: React.FC = () => {
 
   // Analytics Summaries
   const availableItems = items.filter((i) => i.status === 'Available');
-  const totalStockCount = availableItems.reduce((acc, i) => acc + i.stockCount, 0);
+  const soldItems = items.filter((i) => i.status === 'Sold');
+  const totalStockCount = availableItems.reduce((acc, i) => acc + (i.stockCount || 1), 0);
   const totalStockValuationPKR = availableItems.reduce(
-    (acc, i) => acc + i.sellingPricePKR * i.stockCount,
+    (acc, i) => acc + i.sellingPricePKR * (i.stockCount || 1),
     0
   );
 
@@ -324,6 +376,42 @@ export const InventoryManager: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Sold Item Confirmation Banner */}
+      {soldBannerInfo && (
+        <div className="bg-emerald-950/80 border border-emerald-700/80 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono text-emerald-200 shadow-xl animate-in fade-in duration-200">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+            <div>
+              <span className="font-bold text-white text-sm block">
+                {soldBannerInfo.bikeName} marked as Sold!
+              </span>
+              <span className="text-emerald-300">
+                Created Invoice #{soldBannerInfo.invoiceNumber} and moved motorcycle to the Invoices & Sales section.
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 self-end sm:self-center">
+            {onViewInvoice && (
+              <button
+                type="button"
+                onClick={() => onViewInvoice(soldBannerInfo.sale)}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-emerald-900/40 cursor-pointer"
+              >
+                <Receipt className="w-3.5 h-3.5" />
+                <span>View Invoice Details</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setSoldBannerInfo(null)}
+              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-emerald-900/60 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Top Banner & Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg text-white">
@@ -470,16 +558,43 @@ export const InventoryManager: React.FC = () => {
               </select>
             )}
 
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-white font-mono text-xs focus:outline-none focus:border-indigo-500"
-            >
-              <option value="All">All Statuses</option>
-              <option value="Available">Available</option>
-              <option value="Sold">Sold</option>
-              <option value="Reserved">Reserved</option>
-            </select>
+            {/* Status Quick Filter Chips */}
+            <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-xl p-1 text-xs">
+              <button
+                type="button"
+                onClick={() => setStatusFilter('Available')}
+                className={`px-3 py-1 rounded-lg font-medium whitespace-nowrap transition-all cursor-pointer ${
+                  statusFilter === 'Available'
+                    ? 'bg-emerald-600 text-white font-bold shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Available ({availableItems.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('Sold')}
+                className={`px-3 py-1 rounded-lg font-medium whitespace-nowrap transition-all cursor-pointer ${
+                  statusFilter === 'Sold'
+                    ? 'bg-indigo-600 text-white font-bold shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="View Sold motorcycles moved to Invoices"
+              >
+                Sold ({soldItems.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('All')}
+                className={`px-3 py-1 rounded-lg font-medium whitespace-nowrap transition-all cursor-pointer ${
+                  statusFilter === 'All'
+                    ? 'bg-slate-700 text-white font-bold shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                All ({items.length})
+              </button>
+            </div>
 
             <button
               onClick={() => loadInventory(true)}
@@ -493,6 +608,33 @@ export const InventoryManager: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Sold View Guidance Banner */}
+      {statusFilter === 'Sold' && (
+        <div className="bg-indigo-950/40 border border-indigo-800/60 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-indigo-200 shadow-xl">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-indigo-900/60 text-indigo-400 rounded-xl shrink-0">
+              <Receipt className="w-5 h-5" />
+            </div>
+            <div>
+              <span className="font-bold text-white text-sm block">Sold Motorcycles Archive</span>
+              <span>
+                These motorcycles have been marked as Sold and moved to the <strong>Invoices & Sales</strong> section. Click <strong>&quot;Invoice&quot;</strong> on any row to inspect its sale breakdown, customer, and print receipt.
+              </span>
+            </div>
+          </div>
+          {onNavigateToSales && (
+            <button
+              type="button"
+              onClick={onNavigateToSales}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-xs shrink-0 flex items-center gap-1.5 shadow-md shadow-indigo-900/30 transition-all cursor-pointer"
+            >
+              <span>Go to Invoices Ledger</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Inventory Table */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
@@ -589,20 +731,107 @@ export const InventoryManager: React.FC = () => {
                         {formatPKR(item.sellingPricePKR)}
                       </td>
                       <td className="p-4 text-center">
-                        <span
-                          className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
-                            item.status === 'Available'
-                              ? 'bg-emerald-950 text-emerald-400 border-emerald-800'
-                              : item.status === 'Sold'
-                              ? 'bg-slate-800 text-slate-400 border-slate-700'
-                              : 'bg-amber-950 text-amber-400 border-amber-800'
-                          }`}
-                        >
-                          {item.status}
-                        </span>
+                        <div className="flex flex-col items-center gap-1">
+                          <span
+                            className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                              item.status === 'Available'
+                                ? 'bg-emerald-950 text-emerald-400 border-emerald-800'
+                                : item.status === 'Sold'
+                                ? 'bg-slate-800 text-slate-300 border-slate-700'
+                                : 'bg-amber-950 text-amber-400 border-amber-800'
+                            }`}
+                          >
+                            {item.status}
+                          </span>
+
+                          {item.status === 'Sold' && (() => {
+                            const matchedSale = sales.find((s) =>
+                              s.items.some(
+                                (it) =>
+                                  (it.bikeId && it.bikeId === item.id) ||
+                                  (it.chassisNumber &&
+                                    item.chassisNumber &&
+                                    it.chassisNumber.trim().toLowerCase() ===
+                                      item.chassisNumber.trim().toLowerCase())
+                              )
+                            );
+                            if (matchedSale) {
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => onViewInvoice?.(matchedSale)}
+                                  className="inline-flex items-center gap-1 text-[10px] font-mono text-indigo-300 hover:text-indigo-200 bg-indigo-950/90 hover:bg-indigo-900 px-2 py-0.5 rounded border border-indigo-800/80 transition-colors cursor-pointer"
+                                  title="Click to view sale details in Invoices section"
+                                >
+                                  <Receipt className="w-2.5 h-2.5 text-indigo-400" />
+                                  <span>#{matchedSale.invoiceNumber}</span>
+                                </button>
+                              );
+                            }
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => setBikeToSell(item)}
+                                className="inline-flex items-center gap-1 text-[10px] font-mono text-amber-300 hover:text-amber-200 bg-amber-950/80 hover:bg-amber-900 px-1.5 py-0.5 rounded border border-amber-800 transition-colors cursor-pointer"
+                                title="Create invoice for this sold bike"
+                              >
+                                <span>+ Invoice</span>
+                              </button>
+                            );
+                          })()}
+                        </div>
                       </td>
                       <td className="p-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          {item.status === 'Available' ? (
+                            <button
+                              type="button"
+                              onClick={() => setBikeToSell(item)}
+                              className="px-2.5 py-1.5 bg-emerald-950/80 hover:bg-emerald-900 text-emerald-400 hover:text-emerald-300 rounded-lg border border-emerald-800/70 transition-all flex items-center gap-1 font-mono text-xs font-semibold cursor-pointer shadow-sm"
+                              title="Mark as Sold & Move to Invoice"
+                            >
+                              <Receipt className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">Sell</span>
+                            </button>
+                          ) : (
+                            (() => {
+                              const matchedSale = sales.find((s) =>
+                                s.items.some(
+                                  (it) =>
+                                    (it.bikeId && it.bikeId === item.id) ||
+                                    (it.chassisNumber &&
+                                      item.chassisNumber &&
+                                      it.chassisNumber.trim().toLowerCase() ===
+                                        item.chassisNumber.trim().toLowerCase())
+                                )
+                              );
+                              if (matchedSale) {
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => onViewInvoice?.(matchedSale)}
+                                    className="px-2.5 py-1.5 bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 hover:text-indigo-200 rounded-lg border border-indigo-800/70 transition-all flex items-center gap-1 font-mono text-xs font-semibold cursor-pointer shadow-sm"
+                                    title={`View Invoice #${matchedSale.invoiceNumber} in Invoices section`}
+                                  >
+                                    <Receipt className="w-3.5 h-3.5 text-indigo-400" />
+                                    <span className="hidden sm:inline">Invoice</span>
+                                  </button>
+                                );
+                              }
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => setBikeToSell(item)}
+                                  className="px-2 py-1.5 bg-amber-950/80 hover:bg-amber-900 text-amber-300 rounded-lg border border-amber-800/70 transition-all flex items-center gap-1 font-mono text-xs cursor-pointer shadow-sm"
+                                  title="Create Invoice for this sold bike"
+                                >
+                                  <Receipt className="w-3.5 h-3.5 text-amber-400" />
+                                  <span className="hidden sm:inline">+ Invoice</span>
+                                </button>
+                              );
+                            })()
+                          )}
+
                           <button
                             type="button"
                             onClick={() => openEditModal(item)}
@@ -1083,6 +1312,14 @@ export const InventoryManager: React.FC = () => {
         item={stockItemToUpdate}
         onClose={() => setStockItemToUpdate(null)}
         onStockUpdated={() => loadInventory(true)}
+      />
+
+      {/* Mark Bike as Sold & Create Invoice Modal */}
+      <MarkBikeAsSoldModal
+        isOpen={!!bikeToSell}
+        bike={bikeToSell}
+        onClose={() => setBikeToSell(null)}
+        onSoldComplete={handleSoldComplete}
       />
     </div>
   );
