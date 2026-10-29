@@ -11,7 +11,7 @@ interface LoginFormProps {
 
 export const LoginForm: React.FC<LoginFormProps> = ({
   onLoginSuccess,
-  showroomName = 'Motorcycle Showroom',
+  showroomName = 'HS Traders',
 }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

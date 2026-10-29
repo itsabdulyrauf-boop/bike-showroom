@@ -92,6 +92,9 @@ export async function seedInitialDataIfEmpty(): Promise<void> {
   const existingSettings = await db.get('settings', 'showroom_main_settings');
   if (!existingSettings) {
     await db.put('settings', INITIAL_SHOWROOM_SETTINGS);
+  } else if (!existingSettings.showroomName || existingSettings.showroomName === 'Motorcycle Showroom' || existingSettings.showroomName === 'Chat Traders') {
+    existingSettings.showroomName = 'HS Traders';
+    await db.put('settings', existingSettings);
   }
 
   // 1b. Ensure initial dynamic brands exist locally

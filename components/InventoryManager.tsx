@@ -30,7 +30,11 @@ import {
   Layers,
   Receipt,
   ArrowRight,
+  Download,
 } from 'lucide-react';
+import { ExportModal } from '@/components/reporting/ExportModal';
+import { exportInventoryToPdf } from '@/lib/reports/pdfExport';
+import { exportInventoryToExcel } from '@/lib/reports/excelExport';
 
 interface InventoryManagerProps {
   onViewInvoice?: (sale: SaleRecord) => void;
@@ -56,6 +60,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   const [stockBatchFilter, setStockBatchFilter] = useState<string>('All');
   const [isBrandModalOpen, setIsBrandModalOpen] = useState<boolean>(false);
   const [stockItemToUpdate, setStockItemToUpdate] = useState<InventoryItem | null>(null);
+  const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
 
   // Mark as Sold & Move to Invoice State
   const [bikeToSell, setBikeToSell] = useState<InventoryItem | null>(null);
@@ -451,7 +456,15 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
             </span>
             <p className="text-xs text-slate-300">Add New / Used Bikes or Rickshaw Bodies</p>
           </div>
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <button
+              type="button"
+              onClick={() => setIsExportModalOpen(true)}
+              className="py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-slate-200 hover:text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-md"
+              title="Export Inventory Report (PDF / Excel)"
+            >
+              <Download className="w-3.5 h-3.5 text-blue-400" /> Export
+            </button>
             <button
               onClick={openAddModal}
               className="py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/20 cursor-pointer"
@@ -1320,6 +1333,25 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
         bike={bikeToSell}
         onClose={() => setBikeToSell(null)}
         onSoldComplete={handleSoldComplete}
+      />
+
+      {/* Inventory Export Modal */}
+      <ExportModal<InventoryItem>
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        title="Export Inventory & Vehicle Stock Report"
+        subtitle="Download complete technical specifications, chassis, engine numbers, and valuations"
+        allItems={items}
+        filteredItems={filteredItems}
+        dateGetter={(inv) => inv.updatedAt}
+        allowExcel={true}
+        onExport={async ({ format, periodLabel, itemsToExport }) => {
+          if (format === 'pdf') {
+            exportInventoryToPdf(itemsToExport, periodLabel, 'HS Traders');
+          } else {
+            exportInventoryToExcel(itemsToExport, periodLabel, 'HS Traders');
+          }
+        }}
       />
     </div>
   );

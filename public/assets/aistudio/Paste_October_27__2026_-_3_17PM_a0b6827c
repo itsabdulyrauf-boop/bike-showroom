@@ -1,0 +1,768 @@
+# MASTER ENHANCEMENT PROMPT — CHAT TRADERS SHOWROOM MANAGEMENT SYSTEM
+## Advanced Reporting, PDF Export, Excel XLS/XLSX Export & Analytics Reporting
+
+### 1. Project Overview
+
+You are working on my existing project, **Chat Traders**, a showroom management system that is already developed and contains existing modules, business logic, database records, user interfaces, and application functionality.
+
+Your task is to enhance the existing project by implementing a comprehensive, professional reporting and data export system across the following modules:
+
+1. Customers
+2. Inventory
+3. Invoices
+4. Stock Management
+5. Analytics
+
+This is an enhancement to an existing application, NOT a request to build a new project from scratch.
+
+**First inspect the complete existing codebase, project structure, database schema, current UI, existing modules, relationships, and business logic. Then implement the enhancements using the existing architecture and conventions.**
+
+Do not unnecessarily redesign, rewrite, replace, or rebuild existing functionality. Preserve the current application and extend it with the required reporting capabilities.
+
+---
+
+### 2. CRITICAL REQUIREMENT — ZERO IMPACT ON EXISTING DATA
+
+The safety and integrity of existing data are the highest priority.
+
+Implement every enhancement under the following strict conditions:
+
+- Do not delete, modify, overwrite, reset, migrate destructively, or corrupt any existing customer, inventory, invoice, stock, payment, transaction, or analytics-related data.
+- Do not reset the database or replace existing collections, tables, documents, or records.
+- Do not change existing database IDs, primary keys, foreign keys, relationships, timestamps, or historical transaction records.
+- Do not alter existing prices, quantities, stock balances, invoice totals, paid amounts, unpaid amounts, or payment histories.
+- Do not change existing business rules or calculations.
+- Do not remove any existing feature, button, filter, action, route, page, or component.
+- Do not break existing authentication, authorization, database connections, navigation, or application workflows.
+- Do not introduce destructive database migrations or unnecessary schema changes.
+- Exporting a report must be a read-only operation. It must never change the original records.
+- Generate reports from the existing source of truth and preserve the accuracy of all displayed information.
+
+If a small technical change is necessary, implement it in a backward-compatible manner. Additive database changes should only be introduced when genuinely necessary and must not affect existing records.
+
+Before implementation, inspect the current code and identify the safest way to integrate these features.
+
+After implementation, verify that existing records, calculations, and workflows remain unchanged.
+
+**Acceptance condition: All existing data must remain intact, and all existing functionality must continue to work as it did before the enhancement.**
+
+---
+
+### 3. Global Reporting and Export System
+
+Implement a consistent export experience throughout the application.
+
+For the Customers, Inventory, Invoices, and Stock Management modules, provide the following export formats:
+
+- PDF
+- Microsoft Excel-compatible spreadsheet format: XLS or XLSX, depending on the existing project's supported libraries and technical compatibility.
+
+Use XLSX if it is the more reliable and maintainable option, but label the option clearly as Excel export. If the existing application specifically requires legacy XLS, support XLS where technically appropriate.
+
+For the Analytics module, provide PDF export only.
+
+Each export operation must use the currently available data and applicable filters. The generated report must be professionally formatted, accurate, readable, and suitable for business use.
+
+#### Export controls
+
+Add appropriate export controls to the relevant existing module pages without disrupting the current UI.
+
+Where appropriate, provide clearly labeled options such as:
+
+- Export PDF
+- Export Excel
+- Export All
+- Export Filtered Results
+
+For Stock Management, also provide individual stock export and consolidated stock export options.
+
+The export functionality must work with both the complete dataset and filtered results.
+
+If no records match the selected filters, show a clear message such as "No records available for export" instead of generating a misleading or incorrectly populated report.
+
+---
+
+### 4. Customer Module — PDF and Excel Export
+
+Enhance the existing Customers section with comprehensive reporting functionality.
+
+#### Required capabilities
+
+A. Export all customers.
+
+Allow the user to export the complete customer list into one PDF file or one Excel file.
+
+B. Export filtered customers.
+
+Allow the user to export only the customers matching the currently applied filters, search terms, or date range, where those filters are supported by the existing module.
+
+C. Date-based reporting.
+
+Provide the following reporting options where compatible with the existing customer data and date fields:
+
+- Weekly customer report
+- Monthly customer report
+- Yearly customer report
+- Custom date-range report
+- All customers
+
+Use the actual customer creation or registration date for date-based customer reports. Do not use invoice dates as customer registration dates.
+
+D. Export complete customer details.
+
+Include every relevant customer field currently displayed in the Customers table and any additional business-relevant customer fields already available in the database.
+
+Examples may include:
+
+- Customer ID
+- Customer name
+- Phone number
+- Email address
+- Address
+- Registration or creation date
+- Total invoices
+- Total purchases
+- Total paid amount
+- Outstanding balance
+- Other existing customer-related fields
+
+These are examples, not instructions to invent new data fields. Inspect the existing schema and include the actual relevant fields.
+
+E. Accurate reporting.
+
+Ensure customer totals and financial summaries are calculated from the correct underlying records, using the application's existing business rules.
+
+Do not duplicate customers or invoices when calculating summaries.
+
+#### Customer report format
+
+The PDF should include a professional title, report generation date, applied filters, column headings, page numbers, and a summary where appropriate.
+
+The Excel export should include clear column headers, correctly typed dates and numbers, readable column widths, and usable filtering or sorting.
+
+If the report contains multiple logical groups, use separate worksheets when this improves clarity.
+
+---
+
+### 5. Inventory Module — Complete PDF and Excel Export
+
+Enhance the existing Inventory section so users can export all inventory information displayed in the application.
+
+#### Required export options
+
+- Export all inventory.
+- Export currently filtered inventory.
+- Export inventory by week, month, or year where relevant date fields exist.
+- Export inventory within a custom date range.
+- Export individual matching records based on supported search and filter criteria.
+
+#### Complete inventory details
+
+The export must include **all relevant inventory columns and details currently available in the existing inventory table and underlying inventory records**.
+
+Do not export only the visible columns if additional relevant inventory details are available and should be included in the report.
+
+Depending on the actual schema, these fields may include:
+
+- Inventory ID or product ID
+- Product name
+- SKU or item code
+- Product description
+- Category
+- Brand or model
+- Purchase price
+- Sale price
+- Available quantity
+- Initial quantity, if recorded
+- Stock location or stock assignment
+- Supplier information, if available
+- Inventory status
+- Creation date
+- Last updated date
+- Other existing inventory attributes
+
+Include the real fields supported by the current application. Do not create fabricated values for missing information.
+
+#### PDF requirements
+
+Generate a professional inventory report with:
+
+- Report title
+- Report generation date and time
+- Selected reporting period
+- Applied filters
+- Complete relevant inventory details
+- Total inventory records
+- Relevant quantity and financial summaries, where supported by existing data
+- Page numbering and repeated column headings across pages
+
+Handle large tables, page breaks, and wide tables correctly so that information is not clipped, hidden, or lost.
+
+#### Excel requirements
+
+The Excel file must contain the complete relevant inventory dataset, with clear headers and correctly formatted numeric, date, currency, and text fields.
+
+If the inventory has many attributes, organize them logically without omitting required information.
+
+The exported inventory data must match the corresponding records in the application.
+
+---
+
+### 6. Invoice Module — PDF and Excel Export
+
+Enhance the existing Invoices section with comprehensive reporting and filtering.
+
+#### Required export options
+
+Provide:
+
+- Export all invoices
+- Export filtered invoices
+- Weekly invoice report
+- Monthly invoice report
+- Yearly invoice report
+- Custom date-range report
+
+Where applicable, allow filtering by invoice status, payment status, customer, or other filters already supported by the application.
+
+Use the invoice issue date or the application's existing invoice reporting date for date-based filtering. Do not substitute unrelated dates.
+
+#### Invoice details
+
+Export all relevant invoice information available in the current system, including:
+
+- Invoice number
+- Invoice ID
+- Customer name and relevant customer reference
+- Invoice date
+- Due date, if applicable
+- Products or line items
+- Item quantities
+- Unit prices
+- Subtotals
+- Discounts
+- Taxes, if applicable
+- Grand total
+- Amount paid
+- Outstanding balance
+- Payment status
+- Invoice status
+- Payment method, if recorded
+- Other relevant existing invoice fields
+
+Preserve the existing invoice calculations and business logic.
+
+#### Invoice report organization
+
+For PDF exports, produce a readable report with proper headings, date filters, invoice information, payment summaries, and page numbering.
+
+For Excel exports, use clear column headers and appropriate formatting for dates, amounts, quantities, and statuses.
+
+If invoice line items require a separate structure, use a workbook with logically organized worksheets, such as:
+
+1. Invoice Summary
+2. Invoice Line Items
+3. Payment Details, if supported by the existing schema
+
+Use stable invoice identifiers to link the worksheets and avoid duplicating invoice totals when an invoice has multiple line items.
+
+#### Financial accuracy
+
+The report must distinguish between:
+
+- Total invoiced amount
+- Total amount paid
+- Total outstanding amount
+
+Calculate these values using the application's existing accounting rules and actual payment records.
+
+Do not assume that invoice status alone determines the amount paid. Use recorded payments and the established calculation logic wherever available.
+
+Ensure the same invoice is not counted multiple times in aggregate totals.
+
+---
+
+### 7. Stock Management Module — Individual and Consolidated Stock Reports
+
+The Stock Management section requires special attention because each stock location or stock group may contain multiple inventory records.
+
+Implement a comprehensive stock reporting system that supports both individual stock exports and a consolidated report covering all stocks.
+
+#### A. Export individual stock
+
+For each existing stock, provide options to export its complete report in PDF or Excel format.
+
+For example:
+
+- Stock 1 — Export PDF / Excel
+- Stock 2 — Export PDF / Excel
+- Stock 3 — Export PDF / Excel
+
+The actual stock names, IDs, and available stock locations must come from the existing application.
+
+When the user selects an individual stock, include every relevant inventory item assigned to that stock, along with its corresponding quantities, financial details, payment information where applicable, and other existing stock-related fields.
+
+#### B. Export all stocks together
+
+Provide an option to export every stock in the system into:
+
+- One consolidated PDF file
+- One consolidated Excel workbook
+
+Do not generate separate files for each stock when the user selects the consolidated export option.
+
+The consolidated report must contain all relevant information for Stock 1, Stock 2, Stock 3, and every other stock currently available in the application.
+
+#### C. Stock-wise organization
+
+Clearly separate the stock locations in the report.
+
+For example, the PDF could be organized as follows:
+
+1. Overall Stock Summary
+2. Stock 1 — Summary and Inventory Details
+3. Stock 2 — Summary and Inventory Details
+4. Stock 3 — Summary and Inventory Details
+5. Consolidated Totals
+
+The Excel workbook could contain:
+
+- A Summary worksheet
+- A separate worksheet for each stock, where practical
+- An optional All Stock Items worksheet containing the complete item-level dataset
+
+Ensure worksheet names are valid and unique. If there are too many stocks for separate worksheets to be practical, retain all data in a consolidated worksheet with a clear Stock ID or Stock Name column.
+
+#### D. Stock information and inventory details
+
+Include every relevant field available in the current stock and inventory modules, such as:
+
+- Stock ID
+- Stock name or location
+- Product or inventory ID
+- Product name
+- SKU or item code
+- Quantity assigned to the stock
+- Available quantity
+- Purchase price
+- Sale price
+- Stock value, if supported by existing calculations
+- Inventory status
+- Related invoice or transaction reference, where applicable
+- Other relevant stock-specific fields
+
+Use the existing database relationships to determine which inventory items belong to each stock.
+
+Do not assume that every inventory record belongs to every stock.
+
+Do not invent stock assignments, quantities, or values.
+
+#### E. Paid, unpaid, and pending amounts
+
+Include payment information wherever the existing system records it.
+
+The report should clearly show the relevant paid, unpaid, outstanding, or pending amounts associated with stock-related transactions, invoices, or purchases.
+
+Use the correct underlying transaction and payment relationships to determine these amounts.
+
+Important rules:
+
+- Do not classify inventory as paid or unpaid unless the existing data model supports that classification.
+- Do not confuse the value of inventory with the amount paid for that inventory.
+- Do not calculate outstanding amounts by simply adding invoice totals if payments have already been recorded.
+- Do not count the same payment multiple times.
+- If a payment cannot be reliably attributed to a specific stock, report it at the appropriate transaction level rather than assigning it arbitrarily.
+- If the existing application does not record a particular payment detail, do not fabricate it. Clearly distinguish unavailable information from a genuine zero value.
+
+#### F. Consolidated stock totals
+
+Where the existing data supports these calculations, include:
+
+- Total number of stock locations
+- Total inventory records
+- Total units across stocks
+- Total stock value
+- Total paid amount
+- Total outstanding amount
+- Stock-wise inventory counts
+- Stock-wise quantity summaries
+- Other useful existing stock-related metrics
+
+Ensure consolidated totals are mathematically consistent with the individual stock reports.
+
+Avoid double-counting inventory items, quantities, invoices, or payments.
+
+---
+
+### 8. Analytics Module — PDF-Only Export
+
+Enhance the existing Analytics section with a professional PDF report export feature.
+
+**Analytics must support PDF export only. Do not add Excel export to the Analytics section.**
+
+The PDF must capture the analytics information available in the current application, including the graphs, charts, metrics, summaries, and other relevant visualizations.
+
+#### A. Export all analytics
+
+Provide an option such as "Export Analytics PDF" that exports a complete report covering all relevant analytics content available to the current user.
+
+Include all relevant analytics components displayed on the page, including:
+
+- Dashboard summary cards
+- Revenue charts
+- Sales graphs
+- Customer analytics
+- Inventory analytics
+- Stock analytics
+- Invoice analytics
+- Payment analytics
+- Paid versus outstanding comparisons
+- Monthly, weekly, or yearly trends
+- Other charts, tables, metrics, and summaries already implemented
+
+These are examples. Inspect the existing Analytics page and include all applicable components actually present in the project.
+
+Do not create fictional charts or metrics that are not supported by the application's data.
+
+#### B. Filtered analytics reports
+
+If the Analytics page supports date ranges, filters, categories, or other reporting controls, the exported PDF must respect the currently selected filters.
+
+Where appropriate, support:
+
+- Weekly analytics
+- Monthly analytics
+- Yearly analytics
+- Custom date-range analytics
+- All available analytics
+
+If a filter is not supported by the current analytics implementation, do not introduce misleading filtering behavior.
+
+#### C. Charts and graph rendering
+
+Charts must be visible and readable in the exported PDF.
+
+Do not allow charts to appear as blank boxes, missing images, clipped content, or incomplete visualizations.
+
+Choose an appropriate rendering strategy based on the existing charting library. For example, use supported SVG or canvas rendering, reliable image capture, or a compatible PDF-generation approach.
+
+Ensure that:
+
+- Chart labels are legible.
+- Legends are visible.
+- Axis labels are not clipped.
+- Colors and chart distinctions remain understandable.
+- Charts do not overlap headings, tables, or other content.
+- Large charts are placed appropriately across pages.
+- Tables and summary cards remain readable.
+- Multi-page reports maintain consistent formatting.
+
+If a chart cannot be reliably rendered using a direct page capture, use a compatible rendering approach that preserves the actual chart data and visual representation.
+
+#### D. Analytics PDF structure
+
+Organize the report professionally, for example:
+
+1. Report Cover and Generation Details
+2. Executive Summary
+3. Key Performance Indicators
+4. Sales and Revenue Analytics
+5. Customer Analytics
+6. Inventory Analytics
+7. Stock Analytics
+8. Invoice and Payment Analytics
+9. Trends, Charts, and Graphs
+10. Additional Analytics Sections
+
+Only include sections that actually exist or can be derived reliably from the current application.
+
+The PDF must include the report period, applied filters, generation timestamp, and page numbers.
+
+Ensure the PDF contains the actual analytics content rather than merely printing a screenshot of the browser page with navigation bars, buttons, menus, or unrelated UI elements.
+
+---
+
+### 9. Weekly, Monthly, Yearly, Custom Range, and All-Data Filters
+
+Implement a consistent reporting-period selection experience across the applicable modules.
+
+Provide these options where supported:
+
+- Weekly
+- Monthly
+- Yearly
+- Custom Date Range
+- All Records
+
+The user should be able to select a reporting period before exporting.
+
+#### Filter behavior
+
+Weekly reports must use a clearly defined week range.
+
+Monthly reports must cover the selected calendar month.
+
+Yearly reports must cover the selected calendar year.
+
+Custom date-range reports must include the selected start and end dates.
+
+All Records must include the entire relevant dataset, not merely the records loaded on the current page.
+
+Use the date field appropriate to the selected module:
+
+- Customers: Customer creation or registration date
+- Inventory: The relevant inventory creation, update, or transaction date, depending on the report
+- Invoices: Invoice date
+- Stock: The relevant stock or transaction date, depending on the requested report
+- Analytics: The same date basis and filters used by the existing analytics calculations
+
+If the current module contains additional filters, such as status, category, stock location, or customer, apply them consistently when exporting filtered results.
+
+#### Important implementation details
+
+- Clearly display the selected date range in the exported report.
+- Handle start and end dates consistently, including the applicable timezone.
+- Prevent invalid ranges in which the start date is after the end date.
+- Ensure date boundaries do not accidentally omit records at the beginning or end of a period.
+- If pagination is implemented, export all records matching the selected filters, not just the current page.
+- Ensure the data in the exported file corresponds to the user's selected reporting criteria.
+
+---
+
+### 10. Professional PDF Design Requirements
+
+All PDF reports must use a consistent, professional, business-oriented design suitable for a showroom management system.
+
+Include, where appropriate:
+
+- Chat Traders branding and existing logo, if available
+- Report title
+- Reporting period
+- Export generation date and time
+- Applied filters
+- Clean table layouts
+- Consistent typography
+- Readable font sizes
+- Proper spacing and margins
+- Page numbers
+- Repeated table headers across pages
+- Summary sections and totals
+- Currency formatting consistent with the existing application
+
+Use a suitable portrait or landscape page orientation depending on the number and width of columns.
+
+For wide inventory, invoice, and stock reports, use landscape orientation when needed to preserve readability.
+
+For large datasets, support multi-page reports and repeat the column headings on each page.
+
+Ensure that:
+
+- Text is not cut off.
+- Columns do not overlap.
+- Long values are handled properly.
+- Tables do not extend outside page boundaries.
+- Empty values are displayed consistently.
+- PDF files open correctly in standard PDF readers.
+- Reports do not contain broken symbols, missing fonts, or incorrectly formatted amounts.
+
+Do not unnecessarily redesign the main application to achieve this. The PDF styling should be implemented within the reporting system.
+
+---
+
+### 11. Excel Export Requirements
+
+For all applicable modules, generate valid Excel-compatible files that are useful for further business analysis.
+
+Requirements:
+
+- Use appropriate `.xlsx` or `.xls` file extensions according to the chosen format.
+- Include clear worksheet names and descriptive column headers.
+- Preserve all relevant records and fields.
+- Store dates as actual date values wherever possible.
+- Store quantities and monetary amounts as numeric values rather than formatted text.
+- Apply appropriate currency, date, percentage, and number formats.
+- Set sensible column widths.
+- Enable filters on the header row where practical.
+- Freeze header rows for large datasets.
+- Support sorting and filtering.
+- Prevent accidental loss of leading zeros in identifiers such as SKUs or phone numbers.
+- Keep identifiers as text where appropriate.
+- Use stable record IDs to maintain traceability.
+- Include report generation details and applied filters where useful.
+- Avoid duplicate records and repeated aggregate totals.
+- Ensure the exported workbook opens without repair warnings in Microsoft Excel and compatible spreadsheet applications.
+
+If a report requires multiple related datasets, use multiple worksheets with clearly defined relationships rather than combining unrelated information into confusing columns.
+
+Do not omit required fields simply to make the spreadsheet smaller.
+
+---
+
+### 12. Technical Implementation Requirements
+
+Before coding, inspect the current technology stack and identify the existing libraries, database access patterns, state management, UI components, and routing conventions.
+
+Follow the project's existing architecture and coding standards.
+
+#### Implementation principles
+
+1. Reuse existing components and shared utilities where practical.
+2. Build reusable export functions or services to avoid duplicating PDF and Excel logic across modules.
+3. Keep module-specific data selection and calculations separate from shared file-generation utilities.
+4. Use the existing data-access layer and approved authorization rules.
+5. Prefer efficient database queries and server-side processing for large datasets where supported.
+6. Do not expose database credentials, API keys, tokens, or private configuration values.
+7. Respect existing authentication and role-based permissions.
+8. Prevent unauthorized users from exporting records they are not allowed to access.
+9. Validate filters and reporting parameters before generating files.
+10. Handle errors gracefully and display understandable messages.
+11. Provide a loading state while reports are being generated.
+12. Prevent accidental duplicate export operations caused by repeated clicks.
+13. Use reliable libraries compatible with the project's current framework and runtime.
+14. Avoid installing unnecessary packages or introducing conflicting dependencies.
+15. Keep the code maintainable and consistent with existing conventions.
+
+For large reports, avoid loading an unnecessarily large dataset into the browser if the existing architecture supports efficient server-side generation.
+
+If asynchronous report generation is required, provide a clear progress or completion state without changing the underlying business records.
+
+Do not add an unnecessary backend service, replace the database, or change the application's architecture unless there is a clear technical requirement.
+
+---
+
+### 13. User Interface Integration
+
+Integrate the new export functionality naturally into the existing Chat Traders interface.
+
+Maintain the current navigation, visual identity, layout conventions, and responsive behavior.
+
+Add the export controls to the relevant existing pages:
+
+- Customers
+- Inventory
+- Invoices
+- Stock Management
+- Analytics
+
+Use the existing UI components and styling system wherever possible.
+
+For modules with multiple export options, provide an intuitive interface that allows users to choose the report period, apply filters, select the file format, and generate the report.
+
+For Stock Management, distinguish clearly between exporting an individual stock and exporting all stocks.
+
+For Analytics, show only the PDF export option.
+
+Ensure the interface works correctly on supported desktop and mobile screen sizes.
+
+Do not remove existing controls or interfere with existing table actions, search, sorting, pagination, edit functionality, or record management.
+
+---
+
+### 14. Validation and Testing
+
+After implementation, thoroughly test all new features and existing workflows.
+
+#### Customer testing
+
+- Export all customers to PDF.
+- Export all customers to Excel.
+- Export filtered customers.
+- Export weekly, monthly, and yearly customer reports where applicable.
+- Verify customer counts and relevant financial summaries.
+
+#### Inventory testing
+
+- Export the complete inventory table to PDF.
+- Export the complete inventory table to Excel.
+- Verify that all relevant inventory fields are included.
+- Test filtered inventory and date-range reports.
+- Confirm that large tables are formatted correctly.
+
+#### Invoice testing
+
+- Export all invoices to PDF and Excel.
+- Test weekly, monthly, yearly, and custom date ranges.
+- Test supported customer, status, and payment filters.
+- Verify invoice totals, paid amounts, and outstanding balances.
+- Confirm that multiple invoice line items do not cause duplicated totals.
+
+#### Stock testing
+
+- Export each individual stock to PDF and Excel.
+- Export all stocks into one consolidated PDF.
+- Export all stocks into one consolidated Excel workbook.
+- Verify that every stock contains only its correctly assigned inventory.
+- Check stock-wise and consolidated totals.
+- Verify paid, unpaid, and outstanding figures against the actual transaction data.
+- Confirm that no inventory, payment, or invoice is counted twice.
+
+#### Analytics testing
+
+- Export the complete Analytics page to PDF.
+- Verify that every relevant chart, graph, table, metric, and summary is included.
+- Test filtered and date-range reports.
+- Check chart rendering, page breaks, labels, and readability.
+- Confirm that Analytics does not offer an Excel export.
+
+#### Data integrity testing
+
+Before and after testing, verify that:
+
+- Existing customer records remain unchanged.
+- Existing inventory records remain unchanged.
+- Existing invoices remain unchanged.
+- Existing stock quantities and assignments remain unchanged.
+- Existing payments and transaction histories remain unchanged.
+- Existing financial calculations remain unchanged.
+- Existing database relationships remain intact.
+- Existing authentication and permissions still work.
+- Existing CRUD operations and other application workflows continue to work.
+
+Use safe test procedures and avoid modifying production data merely to test exports.
+
+Test boundary cases, including empty results, large datasets, missing optional values, invalid date ranges, and records with long text fields.
+
+---
+
+### 15. Final Deliverables
+
+Complete the enhancement directly in the existing project.
+
+At the end, provide a concise but informative implementation summary containing:
+
+1. All modules enhanced.
+2. Export options implemented in each module.
+3. Date filters and other filtering capabilities added.
+4. Stock-wise and consolidated reporting behavior.
+5. Analytics PDF report functionality.
+6. Any new libraries or utilities introduced.
+7. Any files or components created or modified.
+8. Tests performed and their results.
+9. Any known limitations or features that could not be completed.
+10. Confirmation of the data-integrity checks performed.
+
+Do not claim that a feature is complete or tested unless it has actually been implemented and verified.
+
+If any existing schema or business rule is unclear, inspect the code and database relationships before making a decision. Prefer preserving existing behavior over introducing assumptions.
+
+---
+
+### 16. Final Execution Instructions
+
+Follow this order of work:
+
+**Phase 1 — Audit:** Inspect the complete existing project and understand the current Customers, Inventory, Invoices, Stock Management, and Analytics implementations.
+
+**Phase 2 — Plan:** Identify the safest implementation approach, reusable export utilities, required dependencies, data sources, and testing strategy.
+
+**Phase 3 — Implement:** Add PDF and Excel exports to Customers, Inventory, Invoices, and Stock Management. Add PDF-only export to Analytics. Implement the applicable reporting filters and consolidated stock reports.
+
+**Phase 4 — Validate:** Test the generated files, filter accuracy, totals, formatting, permissions, and compatibility with the existing application.
+
+**Phase 5 — Regression Test:** Verify that all original features, database records, calculations, and workflows continue to work.
+
+**Phase 6 — Report:** Provide a summary of completed changes, modified files, test results, and any remaining limitations.
+
+### Final Non-Negotiable Rule
+
+**Enhance the existing Chat Traders project without rebuilding it from scratch, and do not compromise, delete, reset, overwrite, or corrupt any existing data or functionality. All reports must be accurate, complete, filter-aware, professionally formatted, and generated without changing the underlying business records.**

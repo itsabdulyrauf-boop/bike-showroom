@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { SaleRecord, ExpenseRecord, InventoryItem, StockEntry } from '@/types';
 import { formatPKR } from '@/lib/currency';
 import { getAllSales, getAllExpenses, getAllInventory, getAllStocks } from '@/lib/db';
+import { exportAnalyticsToPdf } from '@/lib/reports/pdfExport';
 import {
   BarChart3,
   TrendingUp,
@@ -16,6 +17,7 @@ import {
   CheckCircle2,
   Download,
   FileSpreadsheet,
+  FileText,
   Calendar,
   Filter,
   ChevronLeft,
@@ -27,6 +29,7 @@ import {
   ArrowUpRight,
   ShieldCheck,
   Archive,
+  Loader2,
 } from 'lucide-react';
 
 export const AnalyticsDashboard: React.FC = () => {
@@ -37,6 +40,8 @@ export const AnalyticsDashboard: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedMonth, setSelectedMonth] = useState<string>('all'); // 'all' | 'YYYY-MM'
   const [stockSearchQuery, setStockSearchQuery] = useState<string>('');
+  const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
+  const dashboardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -429,9 +434,42 @@ export const AnalyticsDashboard: React.FC = () => {
     expenseByCategory[e.category] = (expenseByCategory[e.category] || 0) + e.amountPKR;
   });
 
+  // Handle PDF-Only Export for Analytics
+  const handleExportAnalyticsPdf = async () => {
+    setIsExportingPdf(true);
+    try {
+      await exportAnalyticsToPdf(
+        formatMonthLabel(selectedMonth),
+        {
+          totalRevenuePKR,
+          totalActualCostPKR,
+          totalCogsPKR,
+          totalExpensePKR,
+          netProfitPKR,
+          netMarginPercent,
+          grossMarginPercent,
+          totalStockValuationPKR,
+          totalStockCostValuationPKR,
+          totalAvailableStockUnits,
+          totalBikesSold,
+          salesCount: filteredSales.length,
+        },
+        topSellingModels,
+        expenseByCategory,
+        filteredStockPerformance,
+        dashboardRef.current,
+        'HS Traders'
+      );
+    } catch (err) {
+      console.error('Error generating Analytics PDF:', err);
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      {/* Top Banner with CSV Export Actions */}
+      {/* Top Banner with PDF Export and Quick Actions */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl text-white flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <div className="flex items-center gap-3">
@@ -443,31 +481,51 @@ export const AnalyticsDashboard: React.FC = () => {
                 Showroom Financial Analytics
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                Monthly revenue, expense breakdown, net profit, and CSV reports
+                Monthly revenue, expense breakdown, net profit, and official PDF audit reports
               </p>
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+          {/* Primary PDF-Only Export Button (Strictly PDF only for Analytics per specification) */}
+          <button
+            onClick={handleExportAnalyticsPdf}
+            disabled={isExportingPdf}
+            className="py-2.5 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-indigo-600 hover:from-rose-500 hover:to-indigo-500 disabled:opacity-50 text-white text-xs font-bold uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-rose-600/20 transition-all cursor-pointer"
+            title="Export complete Financial Analytics Report as PDF"
+          >
+            {isExportingPdf ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Generating PDF...</span>
+              </>
+            ) : (
+              <>
+                <FileText className="w-4 h-4" />
+                <span>Export Analytics PDF</span>
+              </>
+            )}
+          </button>
+
           <button
             onClick={handleExportSalesCSV}
             disabled={filteredSales.length === 0}
-            className="py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-emerald-600/20 transition-all"
+            className="py-2.5 px-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-semibold flex items-center gap-1.5 transition-all"
             title="Export filtered sales records to CSV"
           >
-            <FileSpreadsheet className="w-4 h-4" />
-            <span>Export Sales CSV ({filteredSales.length})</span>
+            <Download className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Sales CSV</span>
           </button>
 
           <button
             onClick={handleExportExpensesCSV}
             disabled={filteredExpenses.length === 0}
-            className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all"
+            className="py-2.5 px-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-semibold flex items-center gap-1.5 transition-all"
             title="Export filtered expense records to CSV"
           >
-            <Download className="w-4 h-4" />
-            <span>Export Expenses CSV</span>
+            <Download className="w-3.5 h-3.5 text-amber-400" />
+            <span>Expenses CSV</span>
           </button>
         </div>
       </div>
@@ -557,8 +615,10 @@ export const AnalyticsDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Overview Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Visual Analytics Container Captured in PDF */}
+      <div ref={dashboardRef} className="space-y-6">
+        {/* Overview Metric Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Sales Revenue */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg text-white">
           <div className="flex items-center justify-between mb-2">
@@ -891,6 +951,7 @@ export const AnalyticsDashboard: React.FC = () => {
             )}
           </div>
         </div>
+      </div>
       </div>
     </div>
   );

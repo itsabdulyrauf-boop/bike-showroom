@@ -33,13 +33,28 @@ import {
   Hash,
   Eye,
   Info,
+  Download,
+  FileSpreadsheet,
 } from 'lucide-react';
+import { ExportModal } from '@/components/reporting/ExportModal';
+import {
+  exportIndividualStockToPdf,
+  exportConsolidatedStocksToPdf,
+} from '@/lib/reports/pdfExport';
+import {
+  exportIndividualStockToExcel,
+  exportConsolidatedStocksToExcel,
+} from '@/lib/reports/excelExport';
 
 export const StockManager: React.FC = () => {
   const [stocks, setStocks] = useState<StockEntry[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+
+  // Export States
+  const [isConsolidatedExportOpen, setIsConsolidatedExportOpen] = useState<boolean>(false);
+  const [individualStockForExport, setIndividualStockForExport] = useState<StockEntry | null>(null);
 
   // Filter & Search
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -293,14 +308,26 @@ export const StockManager: React.FC = () => {
             Record incoming motorcycle lots, assign stock batches to inventory items, and preserve permanent historical audit trails.
           </p>
         </div>
-        <button
-          id="btn-add-stock-entry"
-          onClick={handleOpenAddModal}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl font-medium text-sm transition-all shadow-lg shadow-indigo-600/30 active:scale-95"
-        >
-          <Plus className="w-4 h-4" />
-          <span>New Stock Entry</span>
-        </button>
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setIsConsolidatedExportOpen(true)}
+            className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 px-4 py-2.5 rounded-xl font-medium text-sm transition-all shadow-md cursor-pointer"
+            title="Export Consolidated All Stocks Report (PDF / Excel)"
+          >
+            <Download className="w-4 h-4 text-cyan-400" />
+            <span>Export All Stocks</span>
+          </button>
+
+          <button
+            id="btn-add-stock-entry"
+            onClick={handleOpenAddModal}
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl font-medium text-sm transition-all shadow-lg shadow-indigo-600/30 active:scale-95"
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Stock Entry</span>
+          </button>
+        </div>
       </div>
 
       {/* Summary KPI Cards */}
@@ -534,6 +561,14 @@ export const StockManager: React.FC = () => {
                             className="p-1.5 hover:bg-slate-800 text-indigo-400 hover:text-indigo-300 rounded-lg transition-colors"
                           >
                             <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            id={`btn-export-stock-${stock.id}`}
+                            onClick={() => setIndividualStockForExport(stock)}
+                            title="Export Stock Report (PDF / Excel)"
+                            className="p-1.5 hover:bg-slate-800 text-cyan-400 hover:text-cyan-300 rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Download className="w-4 h-4" />
                           </button>
                           <button
                             id={`btn-edit-stock-${stock.id}`}
@@ -933,12 +968,104 @@ export const StockManager: React.FC = () => {
               );
             })()}
 
-            <div className="flex justify-end pt-2 border-t border-slate-800">
+            <div className="flex items-center justify-between pt-3 border-t border-slate-800">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => exportIndividualStockToPdf(viewingStock, inventory, sales, 'HS Traders')}
+                  className="px-3 py-1.5 bg-rose-600/80 hover:bg-rose-500 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors shadow"
+                >
+                  <Download className="w-3.5 h-3.5" /> Export PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => exportIndividualStockToExcel(viewingStock, inventory, sales, 'HS Traders')}
+                  className="px-3 py-1.5 bg-emerald-600/80 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors shadow"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" /> Export Excel
+                </button>
+              </div>
+
               <button
                 onClick={() => setViewingStock(null)}
                 className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-medium transition-colors"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Consolidated Stocks Export Modal */}
+      <ExportModal<StockEntry>
+        isOpen={isConsolidatedExportOpen}
+        onClose={() => setIsConsolidatedExportOpen(false)}
+        title="Export Consolidated All Stocks Report"
+        subtitle="Export all stock procurement batches, unit allocations, revenues, and recovery metrics"
+        allItems={stocks}
+        filteredItems={filteredStocks}
+        dateGetter={(stk) => stk.stockDate || stk.createdAt}
+        allowExcel={true}
+        onExport={async ({ format, itemsToExport }) => {
+          if (format === 'pdf') {
+            exportConsolidatedStocksToPdf(itemsToExport, inventory, sales, 'HS Traders');
+          } else {
+            exportConsolidatedStocksToExcel(itemsToExport, inventory, sales, 'HS Traders');
+          }
+        }}
+      />
+
+      {/* Individual Stock Export Modal */}
+      {individualStockForExport && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl text-slate-100 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800">
+                  {individualStockForExport.batchNumber}
+                </span>
+                <h3 className="text-base font-bold text-white mt-1">
+                  Export Stock Report
+                </h3>
+              </div>
+              <button
+                onClick={() => setIndividualStockForExport(null)}
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300">
+              Download complete batch audit for <strong>{individualStockForExport.stockName}</strong> including assigned motorcycles, realized sales revenue, and payment collections.
+            </p>
+
+            <div className="grid grid-cols-2 gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  exportIndividualStockToPdf(individualStockForExport, inventory, sales, 'HS Traders');
+                  setIndividualStockForExport(null);
+                }}
+                className="p-3.5 bg-rose-950/40 hover:bg-rose-900/50 border border-rose-600/50 rounded-xl flex flex-col items-center justify-center gap-2 text-center transition-all cursor-pointer"
+              >
+                <Download className="w-6 h-6 text-rose-400" />
+                <span className="font-bold text-sm text-white">Export PDF</span>
+                <span className="text-[10px] text-slate-400">Printable stock dossier</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  exportIndividualStockToExcel(individualStockForExport, inventory, sales, 'HS Traders');
+                  setIndividualStockForExport(null);
+                }}
+                className="p-3.5 bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-600/50 rounded-xl flex flex-col items-center justify-center gap-2 text-center transition-all cursor-pointer"
+              >
+                <FileSpreadsheet className="w-6 h-6 text-emerald-400" />
+                <span className="font-bold text-sm text-white">Export Excel</span>
+                <span className="text-[10px] text-slate-400">Multi-sheet .xlsx</span>
               </button>
             </div>
           </div>

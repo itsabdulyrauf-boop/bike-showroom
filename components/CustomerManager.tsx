@@ -1,17 +1,22 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { CustomerItem } from '@/types';
+import { CustomerItem, SaleRecord } from '@/types';
 import { formatPKR } from '@/lib/currency';
-import { getAllCustomers, saveCustomer, deleteCustomer } from '@/lib/db';
+import { getAllCustomers, saveCustomer, deleteCustomer, getAllSales } from '@/lib/db';
 import { Pagination } from '@/components/Pagination';
-import { Users, UserPlus, Search, Phone, MapPin, CreditCard, Trash2, X, AlertCircle, Loader2 } from 'lucide-react';
+import { ExportModal } from '@/components/reporting/ExportModal';
+import { exportCustomersToPdf } from '@/lib/reports/pdfExport';
+import { exportCustomersToExcel } from '@/lib/reports/excelExport';
+import { Users, UserPlus, Search, Phone, MapPin, CreditCard, Trash2, X, AlertCircle, Loader2, Download } from 'lucide-react';
 
 export const CustomerManager: React.FC = () => {
   const [customers, setCustomers] = useState<CustomerItem[]>([]);
+  const [sales, setSales] = useState<SaleRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -37,10 +42,11 @@ export const CustomerManager: React.FC = () => {
   const loadCustomers = async (showLoading = false) => {
     if (showLoading) setLoading(true);
     try {
-      const data = await getAllCustomers();
-      setCustomers(data);
+      const [custData, salesData] = await Promise.all([getAllCustomers(), getAllSales()]);
+      setCustomers(custData);
+      setSales(salesData);
     } catch (err) {
-      console.error('Error loading customers:', err);
+      console.error('Error loading customers & sales:', err);
     } finally {
       setLoading(false);
     }
@@ -48,15 +54,16 @@ export const CustomerManager: React.FC = () => {
 
   useEffect(() => {
     let isMounted = true;
-    getAllCustomers()
-      .then((data) => {
+    Promise.all([getAllCustomers(), getAllSales()])
+      .then(([custData, salesData]) => {
         if (isMounted) {
-          setCustomers(data);
+          setCustomers(custData);
+          setSales(salesData);
           setLoading(false);
         }
       })
       .catch((err) => {
-        console.error('Error loading customers:', err);
+        console.error('Error loading customers & sales:', err);
         if (isMounted) setLoading(false);
       });
 
@@ -150,12 +157,21 @@ export const CustomerManager: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={openAddModal}
-          className="py-2.5 px-4 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-purple-600/20"
-        >
-          <UserPlus className="w-4 h-4" /> Add New Customer
-        </button>
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            onClick={() => setIsExportModalOpen(true)}
+            className="py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 hover:border-slate-600 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-md"
+          >
+            <Download className="w-4 h-4 text-purple-400" /> Export Report
+          </button>
+
+          <button
+            onClick={openAddModal}
+            className="py-2.5 px-4 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-purple-600/20"
+          >
+            <UserPlus className="w-4 h-4" /> Add New Customer
+          </button>
+        </div>
       </div>
 
       {/* Search Input */}
@@ -346,6 +362,25 @@ export const CustomerManager: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Export Report Modal */}
+      <ExportModal<CustomerItem>
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        title="Export Customers Report"
+        subtitle="Download customer directories, CNIC records, and financial purchase ledgers"
+        allItems={customers}
+        filteredItems={filteredCustomers}
+        dateGetter={(c) => c.createdAt}
+        allowExcel={true}
+        onExport={async ({ format, periodLabel, itemsToExport }) => {
+          if (format === 'pdf') {
+            exportCustomersToPdf(itemsToExport, sales, periodLabel, 'HS Traders');
+          } else {
+            exportCustomersToExcel(itemsToExport, sales, periodLabel, 'HS Traders');
+          }
+        }}
+      />
     </div>
   );
 };

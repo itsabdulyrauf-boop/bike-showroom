@@ -2,7 +2,7 @@ import { InventoryItem, CustomerItem, ExpenseRecord, ShowroomSettings, BrandItem
 
 export const INITIAL_SHOWROOM_SETTINGS: ShowroomSettings = {
   id: 'showroom_main_settings',
-  showroomName: 'Motorcycle Showroom',
+  showroomName: 'HS Traders',
   tagline: 'Authorized Motorcycle Showroom & Dealership POS',
   address: 'Main Commercial Market',
   city: 'Karachi, Pakistan',

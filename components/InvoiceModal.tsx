@@ -151,7 +151,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                     <Bike className="w-5 h-5 text-indigo-400" />
                   </div>
                   <h1 className="text-2xl font-black tracking-tight text-slate-900 uppercase">
-                    {settings.showroomName || 'PAK VELOCITY MOTORS'}
+                    {settings.showroomName || 'HS TRADERS'}
                   </h1>
                 </div>
                 <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wider">

@@ -103,7 +103,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="font-bold text-lg leading-tight tracking-tight text-white font-mono">
-                  {showroomName || 'Pak Velocity Motors'}
+                  {showroomName || 'HS Traders'}
                 </h1>
                 <span className="hidden sm:inline-block px-2 py-0.5 text-[10px] uppercase font-semibold bg-indigo-950 text-indigo-300 border border-indigo-800/80 rounded-full">
                   Realtime Cloud POS
